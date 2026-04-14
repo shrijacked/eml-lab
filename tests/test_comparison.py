@@ -8,18 +8,24 @@ from eml_lab.comparison import (
     MethodComparisonExportResult,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
+    MethodComparisonSnapshotHistory,
+    MethodComparisonSnapshotHistoryReportResult,
+    MethodComparisonSnapshotIndexEntry,
     MethodComparisonSnapshotResult,
     PySRStatus,
     aggregate_method_comparisons,
     detect_pysr_environment,
     export_method_comparisons,
     filter_method_comparisons,
+    find_method_comparison_snapshots,
     find_method_comparisons,
     load_method_comparison,
+    report_method_comparison_snapshots,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
     snapshot_method_comparisons,
+    summarize_method_comparison_snapshots,
     summarize_method_comparisons,
 )
 
@@ -455,3 +461,51 @@ def test_snapshot_method_comparisons_writes_report_bundle(
     report = Path(snapshot.report_path).read_text(encoding="utf-8")
     assert "# Method Comparison Snapshot" in report
     assert "Runs: 1" in report
+    assert "## Latest By Target" in report
+    assert "## Recent Runs" in report
+
+
+def test_snapshot_history_report_summarizes_multiple_snapshots(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    run_method_comparison("exp", tmp_path, seed=0)
+    first = snapshot_method_comparisons(tmp_path, tmp_path / "snapshots", targets=["exp"])
+    run_method_comparison("ln", tmp_path, seed=0)
+    second = snapshot_method_comparisons(tmp_path, tmp_path / "snapshots")
+
+    os.utime(Path(first.summary_path), (1, 1))
+    os.utime(Path(second.summary_path), (2, 2))
+
+    snapshots = find_method_comparison_snapshots(tmp_path / "snapshots")
+    history = summarize_method_comparison_snapshots(tmp_path / "snapshots")
+    report = report_method_comparison_snapshots(
+        tmp_path / "snapshots",
+        tmp_path / "snapshot-reports",
+    )
+
+    assert isinstance(snapshots[0], MethodComparisonSnapshotIndexEntry)
+    assert isinstance(history, MethodComparisonSnapshotHistory)
+    assert history.snapshot_count == 2
+    assert history.total_run_count == 3
+    assert history.target_count == 2
+    assert history.latest_snapshot_dir == second.output_dir
+    assert history.best_required_success_rate == 1.0
+    assert {trend.target for trend in history.target_trends} == {"exp", "ln"}
+    assert isinstance(report, MethodComparisonSnapshotHistoryReportResult)
+    assert report.snapshot_count == 2
+    assert Path(report.summary_path).exists()
+    assert Path(report.report_path).exists()
+    assert Path(report.snapshots_csv_path).exists()
+    assert Path(report.target_trends_csv_path).exists()
+    assert Path(report.manifest_path).exists()
+    assert all(Path(path).exists() for path in report.plot_paths.values())

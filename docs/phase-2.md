@@ -25,6 +25,7 @@ This should wrap the real EML engine. It should not replace it.
 - The app now supports target/status/seed filtering plus artifact-backed charts over those analytics.
 - Filtered saved-run analytics can now be exported as JSON/CSV bundles.
 - Filtered saved-run analytics can now be packaged as snapshot bundles with markdown reports and PNG plots.
+- Saved snapshot bundles can now be indexed into longer-horizon history reports with CSVs, markdown, and trend plots.
 - Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo

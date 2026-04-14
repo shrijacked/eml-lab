@@ -13,7 +13,9 @@ from eml_lab.benchmarks import run_benchmark_suite
 from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
     export_method_comparisons,
+    find_method_comparison_snapshots,
     find_method_comparisons,
+    report_method_comparison_snapshots,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
@@ -127,6 +129,23 @@ def build_parser() -> argparse.ArgumentParser:
     compare_snapshot.add_argument("--status", action="append", default=None)
     compare_snapshot.add_argument("--seed", action="append", type=int, default=None)
     compare_snapshot.add_argument("--required-only", action="store_true")
+
+    compare_snapshot_history = subparsers.add_parser(
+        "compare-methods-snapshot-history",
+        help="list saved cross-method comparison snapshot bundles",
+    )
+    compare_snapshot_history.add_argument("--root", type=Path, default=Path("runs/snapshots"))
+
+    compare_snapshot_report = subparsers.add_parser(
+        "compare-methods-snapshot-report",
+        help="build a longer-horizon report across saved comparison snapshot bundles",
+    )
+    compare_snapshot_report.add_argument("--root", type=Path, default=Path("runs/snapshots"))
+    compare_snapshot_report.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("runs/snapshot-reports"),
+    )
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -248,6 +267,14 @@ def main(argv: list[str] | None = None) -> int:
             seeds=args.seed,
             required_only=args.required_only,
         )
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
+    if args.command == "compare-methods-snapshot-history":
+        results = [entry.to_dict() for entry in find_method_comparison_snapshots(args.root)]
+        print(json.dumps(results, indent=2, default=str))
+        return 0
+    if args.command == "compare-methods-snapshot-report":
+        result = report_method_comparison_snapshots(args.root, args.output_dir)
         print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0
     if args.command == "orchestrate":

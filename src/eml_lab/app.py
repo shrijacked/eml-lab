@@ -17,15 +17,19 @@ from eml_lab.comparison import (
     MethodComparisonAggregateRow,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
+    MethodComparisonSnapshotHistory,
+    MethodComparisonSnapshotIndexEntry,
     aggregate_method_comparisons,
     detect_pysr_environment,
     export_method_comparisons,
     filter_method_comparisons,
     load_method_comparison,
+    report_method_comparison_snapshots,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
     snapshot_method_comparisons,
+    summarize_method_comparison_snapshots,
     summarize_method_comparisons,
 )
 from eml_lab.mutations import route_to_tree
@@ -165,6 +169,29 @@ def _method_aggregate_rows(
     ]
 
 
+def _snapshot_history_rows(
+    rows: tuple[MethodComparisonSnapshotIndexEntry, ...],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "created_at": row.created_at,
+            "run_count": row.run_count,
+            "target_count": row.target_count,
+            "required_success_rate": row.required_success_rate,
+            "pysr_available_rate": row.pysr_available_rate,
+            "filters": row.filters,
+            "output_dir": row.output_dir,
+        }
+        for row in rows
+    ]
+
+
+def _snapshot_target_trend_rows(
+    history: MethodComparisonSnapshotHistory,
+) -> list[dict[str, object]]:
+    return [row.to_dict() for row in history.target_trends]
+
+
 def _single_row_chart(values: dict[str, float | int]) -> dict[str, list[float | int]]:
     return {key: [value] for key, value in values.items()}
 
@@ -201,6 +228,19 @@ def _error_trend_chart(entries: tuple[MethodComparisonIndexEntry, ...]) -> dict[
             for entry in ordered
         ],
     }
+
+
+def _snapshot_success_chart(history: MethodComparisonSnapshotHistory) -> dict[str, list[float]]:
+    ordered = sorted(history.snapshots, key=lambda entry: entry.created_at)
+    return {
+        "required_success_rate": [entry.required_success_rate for entry in ordered],
+        "pysr_available_rate": [entry.pysr_available_rate for entry in ordered],
+    }
+
+
+def _snapshot_run_count_chart(history: MethodComparisonSnapshotHistory) -> dict[str, list[int]]:
+    ordered = sorted(history.snapshots, key=lambda entry: entry.created_at)
+    return {"run_count": [entry.run_count for entry in ordered]}
 
 
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
@@ -504,6 +544,71 @@ def main() -> None:
                 if report_path.exists():
                     with st.expander("Snapshot report preview"):
                         st.markdown(report_path.read_text(encoding="utf-8"))
+            st.subheader("Snapshot history")
+            snapshot_history_root = st.text_input(
+                "Snapshot history root",
+                value="runs/snapshots",
+                key="method_compare_snapshot_history_root",
+            )
+            if st.button("Scan snapshot history", key="scan_method_compare_snapshot_history"):
+                st.session_state["method_compare_snapshot_history"] = (
+                    summarize_method_comparison_snapshots(snapshot_history_root)
+                )
+            snapshot_history = st.session_state.get("method_compare_snapshot_history")
+            if snapshot_history is None:
+                st.info("Scan a snapshot root to summarize saved research snapshots over time.")
+            elif not snapshot_history.snapshots:
+                st.info("No saved snapshot bundles were found under that root.")
+            else:
+                metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+                metric_col1.metric("Snapshots", snapshot_history.snapshot_count)
+                metric_col2.metric("Runs represented", snapshot_history.total_run_count)
+                metric_col3.metric("Targets observed", snapshot_history.target_count)
+                metric_col4.metric(
+                    "Best required success",
+                    f"{(snapshot_history.best_required_success_rate or 0.0):.0%}",
+                )
+                chart_col1, chart_col2 = st.columns(2)
+                with chart_col1:
+                    st.caption("Success and availability over snapshots")
+                    st.line_chart(_snapshot_success_chart(snapshot_history))
+                with chart_col2:
+                    st.caption("Run count over snapshots")
+                    st.line_chart(_snapshot_run_count_chart(snapshot_history))
+                st.dataframe(
+                    _snapshot_history_rows(snapshot_history.snapshots),
+                    use_container_width=True,
+                )
+                st.subheader("Target trends")
+                st.dataframe(
+                    _snapshot_target_trend_rows(snapshot_history),
+                    use_container_width=True,
+                )
+                snapshot_history_report_root = st.text_input(
+                    "Snapshot history report root",
+                    value="runs/snapshot-reports",
+                    key="method_compare_snapshot_history_report_root",
+                )
+                if st.button(
+                    "Build snapshot history report",
+                    key="build_method_compare_snapshot_history_report",
+                ):
+                    st.session_state["last_method_compare_snapshot_history_report"] = (
+                        report_method_comparison_snapshots(
+                            snapshot_history_root,
+                            snapshot_history_report_root,
+                        )
+                    )
+                history_report = st.session_state.get(
+                    "last_method_compare_snapshot_history_report"
+                )
+                if history_report is not None:
+                    st.success(f"Built snapshot history report at `{history_report.output_dir}`")
+                    st.json(history_report.to_dict())
+                    history_report_path = Path(history_report.report_path)
+                    if history_report_path.exists():
+                        with st.expander("Snapshot history report preview"):
+                            st.markdown(history_report_path.read_text(encoding="utf-8"))
             if filtered_history:
                 selected_entry = st.selectbox(
                     "Saved run",

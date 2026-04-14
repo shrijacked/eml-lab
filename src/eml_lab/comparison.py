@@ -13,17 +13,12 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import matplotlib
 import torch
 
 from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
 from eml_lab.targets import TargetSpec, get_target, list_targets, sample_inputs
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
-
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 
 
 @dataclass(frozen=True)
@@ -264,6 +259,85 @@ class MethodComparisonSnapshotResult:
     plot_paths: dict[str, str]
     filters: dict[str, object]
     run_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MethodComparisonSnapshotIndexEntry:
+    output_dir: str
+    summary_path: str
+    report_path: str
+    manifest_path: str
+    created_at: str
+    source_root: str
+    run_count: int
+    target_count: int
+    required_success_rate: float
+    pysr_available_rate: float
+    status_counts: dict[str, int]
+    filters: dict[str, object]
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MethodComparisonSnapshotTargetTrend:
+    snapshot_output_dir: str
+    snapshot_created_at: str
+    target: str
+    runs: int
+    seed_count: int
+    required_success_rate: float
+    best_gradient_max_mse: float | None
+    best_agentic_max_mse: float | None
+    latest_status: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MethodComparisonSnapshotHistory:
+    root: str
+    snapshot_count: int
+    total_run_count: int
+    target_count: int
+    latest_snapshot_dir: str | None
+    latest_required_success_rate: float | None
+    best_required_success_rate: float | None
+    status_counts: dict[str, int]
+    snapshots: tuple[MethodComparisonSnapshotIndexEntry, ...]
+    target_trends: tuple[MethodComparisonSnapshotTargetTrend, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "root": self.root,
+            "snapshot_count": self.snapshot_count,
+            "total_run_count": self.total_run_count,
+            "target_count": self.target_count,
+            "latest_snapshot_dir": self.latest_snapshot_dir,
+            "latest_required_success_rate": self.latest_required_success_rate,
+            "best_required_success_rate": self.best_required_success_rate,
+            "status_counts": self.status_counts,
+            "snapshots": [entry.to_dict() for entry in self.snapshots],
+            "target_trends": [entry.to_dict() for entry in self.target_trends],
+        }
+
+
+@dataclass(frozen=True)
+class MethodComparisonSnapshotHistoryReportResult:
+    source_root: str
+    output_dir: str
+    manifest_path: str
+    summary_path: str
+    report_path: str
+    snapshots_csv_path: str
+    target_trends_csv_path: str
+    plot_paths: dict[str, str]
+    snapshot_count: int
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -635,6 +709,126 @@ def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonA
     return aggregate_method_comparisons(find_method_comparisons(root), root=root)
 
 
+def load_method_comparison_snapshot(source: str | Path) -> MethodComparisonSnapshotIndexEntry:
+    path = Path(source)
+    summary_path = path / "summary.json" if path.is_dir() else path
+    if not summary_path.exists():
+        raise FileNotFoundError(f"Method comparison snapshot summary not found: {summary_path}")
+
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    root = summary_path.parent
+    manifest_path = root / "manifest.json"
+    manifest_payload: dict[str, object] = {}
+    if manifest_path.exists():
+        manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    metadata = manifest_payload.get("metadata", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    kind = metadata.get("kind")
+    if kind is not None and kind != "method-comparison-snapshot":
+        raise ValueError(f"Not a method comparison snapshot: {summary_path}")
+    status_counts = payload.get("status_counts", {})
+    filters = metadata.get("filters", {})
+    created_at = datetime.fromtimestamp(summary_path.stat().st_mtime, UTC).isoformat()
+    return MethodComparisonSnapshotIndexEntry(
+        output_dir=str(root),
+        summary_path=str(summary_path),
+        report_path=str(root / "report.md"),
+        manifest_path=str(manifest_path),
+        created_at=created_at,
+        source_root=str(metadata.get("source_root", payload.get("root", ""))),
+        run_count=int(payload.get("run_count", 0)),
+        target_count=int(payload.get("target_count", 0)),
+        required_success_rate=float(payload.get("required_success_rate", 0.0)),
+        pysr_available_rate=float(payload.get("pysr_available_rate", 0.0)),
+        status_counts={
+            str(status): int(count)
+            for status, count in dict(status_counts).items()
+            if isinstance(count, int)
+        },
+        filters=dict(filters) if isinstance(filters, dict) else {},
+    )
+
+
+def find_method_comparison_snapshots(
+    root: str | Path = "runs/snapshots",
+) -> tuple[MethodComparisonSnapshotIndexEntry, ...]:
+    source = Path(root)
+    if not source.exists():
+        return ()
+
+    summary_paths = set(source.rglob("method-compare-snapshot-*/summary.json"))
+    if source.name.startswith("method-compare-snapshot-") and (source / "summary.json").exists():
+        summary_paths.add(source / "summary.json")
+
+    ordered_paths = sorted(
+        summary_paths,
+        key=lambda path: (path.stat().st_mtime, path.as_posix()),
+        reverse=True,
+    )
+    entries: list[MethodComparisonSnapshotIndexEntry] = []
+    for summary_path in ordered_paths:
+        try:
+            entries.append(load_method_comparison_snapshot(summary_path))
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue
+    return tuple(entries)
+
+
+def aggregate_method_comparison_snapshots(
+    entries: Sequence[MethodComparisonSnapshotIndexEntry],
+    *,
+    root: str | Path = "runs/snapshots",
+) -> MethodComparisonSnapshotHistory:
+    snapshots = tuple(entries)
+    if not snapshots:
+        return MethodComparisonSnapshotHistory(
+            root=str(Path(root)),
+            snapshot_count=0,
+            total_run_count=0,
+            target_count=0,
+            latest_snapshot_dir=None,
+            latest_required_success_rate=None,
+            best_required_success_rate=None,
+            status_counts={},
+            snapshots=(),
+            target_trends=(),
+        )
+
+    status_counts: dict[str, int] = {}
+    targets: set[str] = set()
+    target_trends: list[MethodComparisonSnapshotTargetTrend] = []
+    for snapshot in snapshots:
+        for status, count in snapshot.status_counts.items():
+            status_counts[status] = status_counts.get(status, 0) + count
+        for trend in _snapshot_target_trends(snapshot):
+            targets.add(trend.target)
+            target_trends.append(trend)
+
+    return MethodComparisonSnapshotHistory(
+        root=str(Path(root)),
+        snapshot_count=len(snapshots),
+        total_run_count=sum(snapshot.run_count for snapshot in snapshots),
+        target_count=len(targets),
+        latest_snapshot_dir=snapshots[0].output_dir,
+        latest_required_success_rate=snapshots[0].required_success_rate,
+        best_required_success_rate=max(
+            snapshot.required_success_rate for snapshot in snapshots
+        ),
+        status_counts=status_counts,
+        snapshots=snapshots,
+        target_trends=tuple(target_trends),
+    )
+
+
+def summarize_method_comparison_snapshots(
+    root: str | Path = "runs/snapshots",
+) -> MethodComparisonSnapshotHistory:
+    return aggregate_method_comparison_snapshots(
+        find_method_comparison_snapshots(root),
+        root=root,
+    )
+
+
 def export_method_comparisons(
     root: str | Path = "runs",
     output_dir: str | Path = "runs/exports",
@@ -799,6 +993,83 @@ def write_method_comparison_snapshot(
         plot_paths=plot_paths,
         filters=filters_payload,
         run_count=report.run_count,
+    )
+
+
+def report_method_comparison_snapshots(
+    root: str | Path = "runs/snapshots",
+    output_dir: str | Path = "runs/snapshot-reports",
+) -> MethodComparisonSnapshotHistoryReportResult:
+    history = summarize_method_comparison_snapshots(root)
+    return write_method_comparison_snapshot_history_report(
+        history,
+        output_dir,
+        root=root,
+    )
+
+
+def write_method_comparison_snapshot_history_report(
+    history: MethodComparisonSnapshotHistory,
+    output_dir: str | Path,
+    *,
+    root: str | Path = "runs/snapshots",
+) -> MethodComparisonSnapshotHistoryReportResult:
+    timestamp = _timestamp_slug()
+    report_root = Path(output_dir) / f"method-compare-snapshot-history-{timestamp}"
+    report_root.mkdir(parents=True, exist_ok=True)
+
+    summary_path = report_root / "summary.json"
+    snapshots_csv_path = report_root / "snapshots.csv"
+    target_trends_csv_path = report_root / "target_trends.csv"
+    report_path = report_root / "report.md"
+    summary_path.write_text(json.dumps(history.to_dict(), indent=2), encoding="utf-8")
+    _write_csv(
+        snapshots_csv_path,
+        [snapshot.to_dict() for snapshot in history.snapshots],
+    )
+    _write_csv(
+        target_trends_csv_path,
+        [trend.to_dict() for trend in history.target_trends],
+    )
+    plot_paths = _write_method_comparison_snapshot_history_plots(report_root, history)
+    report_path.write_text(
+        _render_method_comparison_snapshot_history_report(history, plot_paths=plot_paths),
+        encoding="utf-8",
+    )
+    manifest = write_artifact_manifest(
+        report_root,
+        files=[
+            ArtifactFile(label="summary", path=str(summary_path), kind="json"),
+            ArtifactFile(label="snapshots-csv", path=str(snapshots_csv_path), kind="csv"),
+            ArtifactFile(
+                label="target-trends-csv",
+                path=str(target_trends_csv_path),
+                kind="csv",
+            ),
+            ArtifactFile(label="report", path=str(report_path), kind="markdown"),
+            *[
+                ArtifactFile(label=f"plot-{label}", path=path, kind="png")
+                for label, path in plot_paths.items()
+            ],
+        ],
+        metadata={
+            "kind": "method-comparison-snapshot-history",
+            "source_root": str(Path(root)),
+            "snapshot_count": history.snapshot_count,
+            "total_run_count": history.total_run_count,
+            "target_count": history.target_count,
+        },
+    )
+    return MethodComparisonSnapshotHistoryReportResult(
+        source_root=str(Path(root)),
+        output_dir=str(report_root),
+        manifest_path=manifest.manifest_path,
+        summary_path=str(summary_path),
+        report_path=str(report_path),
+        snapshots_csv_path=str(snapshots_csv_path),
+        target_trends_csv_path=str(target_trends_csv_path),
+        plot_paths=plot_paths,
+        snapshot_count=history.snapshot_count,
     )
 
 
@@ -968,6 +1239,47 @@ def _write_method_comparison_plots(
     return plot_paths
 
 
+def _write_method_comparison_snapshot_history_plots(
+    root: Path,
+    history: MethodComparisonSnapshotHistory,
+) -> dict[str, str]:
+    plot_paths = {
+        "required_success_rate_over_time": str(root / "required_success_rate_over_time.png"),
+        "run_count_over_time": str(root / "run_count_over_time.png"),
+        "target_success_rate_over_time": str(root / "target_success_rate_over_time.png"),
+        "status_counts": str(root / "status_counts.png"),
+    }
+    ordered_snapshots = sorted(history.snapshots, key=lambda snapshot: snapshot.created_at)
+    _save_line_chart(
+        Path(plot_paths["required_success_rate_over_time"]),
+        {
+            "required_success_rate": [
+                snapshot.required_success_rate for snapshot in ordered_snapshots
+            ]
+        },
+        title="Required Success Rate Over Time",
+        ylabel="Success Rate",
+        ylim=(0.0, 1.0),
+    )
+    _save_line_chart(
+        Path(plot_paths["run_count_over_time"]),
+        {"run_count": [snapshot.run_count for snapshot in ordered_snapshots]},
+        title="Run Count Over Time",
+        ylabel="Runs",
+    )
+    _save_target_trend_chart(
+        Path(plot_paths["target_success_rate_over_time"]),
+        history.target_trends,
+    )
+    _save_bar_chart(
+        Path(plot_paths["status_counts"]),
+        history.status_counts,
+        title="Snapshot History Status Counts",
+        ylabel="Runs",
+    )
+    return plot_paths
+
+
 def _render_method_comparison_snapshot_report(
     report: MethodComparisonAggregate,
     *,
@@ -996,7 +1308,7 @@ def _render_method_comparison_snapshot_report(
         )
     else:
         lines.append("- No saved runs matched the filter.")
-        lines.extend(
+    lines.extend(
         [
             "",
             "## Latest By Target",
@@ -1027,7 +1339,7 @@ def _render_method_comparison_snapshot_report(
             )
     else:
         lines.append("| _none_ | 0 | 0 | 0.00% | n/a | n/a | n/a | `n/a` |")
-        lines.extend(
+    lines.extend(
         [
             "",
             "## Recent Runs",
@@ -1063,6 +1375,101 @@ def _render_method_comparison_snapshot_report(
     return "\n".join(lines) + "\n"
 
 
+def _render_method_comparison_snapshot_history_report(
+    history: MethodComparisonSnapshotHistory,
+    *,
+    plot_paths: Mapping[str, str],
+) -> str:
+    generated_at = datetime.now(UTC).isoformat()
+    lines = [
+        "# Method Comparison Snapshot History",
+        "",
+        f"Generated at: `{generated_at}`",
+        f"Snapshot root: `{history.root}`",
+        "",
+        "## Scope",
+        f"- Snapshots: {history.snapshot_count}",
+        f"- Total saved runs represented: {history.total_run_count}",
+        f"- Targets observed: {history.target_count}",
+        f"- Latest required success rate: {_markdown_scalar(history.latest_required_success_rate)}",
+        f"- Best required success rate: {_markdown_scalar(history.best_required_success_rate)}",
+        f"- Latest snapshot: `{history.latest_snapshot_dir or 'n/a'}`",
+        "",
+        "## Status Counts",
+    ]
+    if history.status_counts:
+        lines.extend(
+            f"- `{status}`: {count}" for status, count in sorted(history.status_counts.items())
+        )
+    else:
+        lines.append("- No snapshots found.")
+    lines.extend(
+        [
+            "",
+            "## Snapshots",
+            (
+                "| created_at | run_count | target_count | required_success_rate | "
+                "pysr_available_rate | output_dir |"
+            ),
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if history.snapshots:
+        for snapshot in history.snapshots:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        snapshot.created_at,
+                        str(snapshot.run_count),
+                        str(snapshot.target_count),
+                        f"{snapshot.required_success_rate:.2%}",
+                        f"{snapshot.pysr_available_rate:.2%}",
+                        f"`{snapshot.output_dir}`",
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| _none_ | 0 | 0 | 0.00% | 0.00% | `n/a` |")
+    lines.extend(
+        [
+            "",
+            "## Target Trends",
+            (
+                "| snapshot_created_at | target | runs | seed_count | "
+                "required_success_rate | best_gradient_max_mse | best_agentic_max_mse |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if history.target_trends:
+        for trend in sorted(
+            history.target_trends,
+            key=lambda item: (item.target, item.snapshot_created_at),
+        ):
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        trend.snapshot_created_at,
+                        trend.target,
+                        str(trend.runs),
+                        str(trend.seed_count),
+                        f"{trend.required_success_rate:.2%}",
+                        _markdown_scalar(trend.best_gradient_max_mse),
+                        _markdown_scalar(trend.best_agentic_max_mse),
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| _none_ | n/a | 0 | 0 | 0.00% | n/a | n/a |")
+    lines.extend(["", "## Plot Files"])
+    lines.extend(f"- `{label}`: `{path}`" for label, path in plot_paths.items())
+    return "\n".join(lines) + "\n"
+
+
 def _save_bar_chart(
     path: Path,
     values: Mapping[str, float | int],
@@ -1071,6 +1478,7 @@ def _save_bar_chart(
     ylabel: str,
     ylim: tuple[float, float] | None = None,
 ) -> None:
+    plt = _pyplot()
     fig, ax = plt.subplots(figsize=(7, 4))
     if values:
         labels = list(values.keys())
@@ -1088,8 +1496,59 @@ def _save_bar_chart(
     plt.close(fig)
 
 
+def _save_line_chart(
+    path: Path,
+    series: Mapping[str, Sequence[float | int]],
+    *,
+    title: str,
+    ylabel: str,
+    ylim: tuple[float, float] | None = None,
+) -> None:
+    plt = _pyplot()
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if series and any(values for values in series.values()):
+        for label, values in series.items():
+            x_values = list(range(1, len(values) + 1))
+            ax.plot(x_values, [float(value) for value in values], marker="o", label=label)
+        ax.legend()
+    else:
+        _render_no_data(ax, title)
+    ax.set_title(title)
+    ax.set_xlabel("Snapshot Order")
+    ax.set_ylabel(ylabel)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def _save_target_trend_chart(
+    path: Path,
+    trends: Sequence[MethodComparisonSnapshotTargetTrend],
+) -> None:
+    by_target: dict[str, list[MethodComparisonSnapshotTargetTrend]] = {}
+    for trend in trends:
+        by_target.setdefault(trend.target, []).append(trend)
+    series = {
+        target: [
+            trend.required_success_rate
+            for trend in sorted(target_trends, key=lambda item: item.snapshot_created_at)
+        ]
+        for target, target_trends in sorted(by_target.items())
+    }
+    _save_line_chart(
+        path,
+        series,
+        title="Target Success Rate Over Time",
+        ylabel="Success Rate",
+        ylim=(0.0, 1.0),
+    )
+
+
 def _save_error_trend_chart(path: Path, entries: Sequence[MethodComparisonIndexEntry]) -> None:
     ordered = sorted(entries, key=lambda entry: entry.created_at)
+    plt = _pyplot()
     fig, ax = plt.subplots(figsize=(7, 4))
     if ordered:
         x_values = list(range(1, len(ordered) + 1))
@@ -1114,7 +1573,7 @@ def _save_error_trend_chart(path: Path, entries: Sequence[MethodComparisonIndexE
     plt.close(fig)
 
 
-def _render_no_data(ax: plt.Axes, title: str) -> None:
+def _render_no_data(ax: object, title: str) -> None:
     ax.text(0.5, 0.5, "No data", ha="center", va="center", fontsize=12)
     ax.set_title(title)
     ax.set_xticks([])
@@ -1135,6 +1594,51 @@ def _markdown_scalar(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.6g}"
     return str(value)
+
+
+def _snapshot_target_trends(
+    snapshot: MethodComparisonSnapshotIndexEntry,
+) -> tuple[MethodComparisonSnapshotTargetTrend, ...]:
+    try:
+        payload = json.loads(Path(snapshot.summary_path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return ()
+    rows = payload.get("latest_by_target", [])
+    if not isinstance(rows, list):
+        return ()
+    trends: list[MethodComparisonSnapshotTargetTrend] = []
+    for row in rows:
+        if not isinstance(row, dict) or "target" not in row:
+            continue
+        trends.append(
+            MethodComparisonSnapshotTargetTrend(
+                snapshot_output_dir=snapshot.output_dir,
+                snapshot_created_at=snapshot.created_at,
+                target=str(row["target"]),
+                runs=int(row.get("runs", 0)),
+                seed_count=int(row.get("seed_count", 0)),
+                required_success_rate=float(row.get("required_success_rate", 0.0)),
+                best_gradient_max_mse=_optional_float(row.get("best_gradient_max_mse")),
+                best_agentic_max_mse=_optional_float(row.get("best_agentic_max_mse")),
+                latest_status=str(row.get("latest_status", "")),
+            )
+        )
+    return tuple(trends)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _pyplot():
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    return plt
 
 
 def _default_train_steps(spec: TargetSpec) -> int:

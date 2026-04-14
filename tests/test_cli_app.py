@@ -160,6 +160,51 @@ def test_cli_compare_methods_snapshot_smoke(tmp_path: Path) -> None:
     assert (snapshot_roots[0] / "manifest.json").exists()
 
 
+def test_cli_compare_methods_snapshot_history_report_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "compare-methods-snapshot-history"
+    snapshot_dir = tmp_path / "snapshots"
+    report_dir = tmp_path / "snapshot-reports"
+
+    exit_code = main(["compare-methods", "--target", "exp", "--output-dir", str(output_dir)])
+
+    assert exit_code in {0, 3}
+    assert (
+        main(
+            [
+                "compare-methods-snapshot",
+                "--root",
+                str(output_dir),
+                "--output-dir",
+                str(snapshot_dir),
+                "--target",
+                "exp",
+            ]
+        )
+        == 0
+    )
+    assert main(["compare-methods-snapshot-history", "--root", str(snapshot_dir)]) == 0
+    assert (
+        main(
+            [
+                "compare-methods-snapshot-report",
+                "--root",
+                str(snapshot_dir),
+                "--output-dir",
+                str(report_dir),
+            ]
+        )
+        == 0
+    )
+    report_roots = list(report_dir.glob("method-compare-snapshot-history-*"))
+    assert len(report_roots) == 1
+    assert (report_roots[0] / "summary.json").exists()
+    assert (report_roots[0] / "report.md").exists()
+    assert (report_roots[0] / "snapshots.csv").exists()
+    assert (report_roots[0] / "target_trends.csv").exists()
+    assert (report_roots[0] / "required_success_rate_over_time.png").exists()
+    assert (report_roots[0] / "manifest.json").exists()
+
+
 def test_cli_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign"
 

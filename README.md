@@ -43,6 +43,8 @@ python -m eml_lab compare-methods-history --root runs
 python -m eml_lab compare-methods-report --root runs
 python -m eml_lab compare-methods-export --root runs --output-dir runs/exports
 python -m eml_lab compare-methods-snapshot --root runs --output-dir runs/snapshots
+python -m eml_lab compare-methods-snapshot-history --root runs/snapshots
+python -m eml_lab compare-methods-snapshot-report --root runs/snapshots --output-dir runs/snapshot-reports
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -171,6 +173,28 @@ This writes a timestamped snapshot bundle with:
 The Compare tab can build the same filtered snapshot bundle and preview the markdown
 report directly in the dashboard.
 
+Summarize saved snapshots over time:
+
+```bash
+python -m eml_lab compare-methods-snapshot-history --root runs/snapshots
+python -m eml_lab compare-methods-snapshot-report --root runs/snapshots --output-dir runs/snapshot-reports
+```
+
+The history command lists timestamped snapshot bundles. The report command writes a
+longer-horizon bundle with:
+- `summary.json`
+- `snapshots.csv`
+- `target_trends.csv`
+- `report.md`
+- `required_success_rate_over_time.png`
+- `run_count_over_time.png`
+- `target_success_rate_over_time.png`
+- `status_counts.png`
+- `manifest.json`
+
+The Compare tab can scan saved snapshots, show success/run-count trends, and build this
+history report from the same package API.
+
 Run the first Phase 2 campaign suite:
 
 ```bash
@@ -276,6 +300,7 @@ src/eml_lab/
 - shipped: artifact-backed charts and target/seed filtering on top of saved analytics
 - shipped: JSON/CSV export bundles for filtered saved-run analytics
 - shipped: report-grade snapshot bundles with markdown summaries and plot images
-- next milestone: longer-horizon trend views and richer per-target research reports
+- shipped: longer-horizon snapshot history reports over saved research snapshots
+- next milestone: richer per-target research reports and operator zoo experiments
 - hosted demo
 - operator zoo search for EML cousins
