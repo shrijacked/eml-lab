@@ -74,6 +74,17 @@ Verified locally on CPU with Python 3.11 and PyTorch 2.11:
 
 The shallow suite recovered all three targets in the local smoke run.
 
+Run an optional PySR comparison:
+
+```bash
+python -m eml_lab compare --target ln --output-dir runs
+```
+
+If `pysr` or `julia` is missing, EML Lab writes a comparison summary explaining what is
+missing and how to install it, rather than failing mysteriously. This follows the PySR
+project's documented install path: `pip install pysr`, with Julia dependencies installed
+at first import.
+
 Launch the dashboard:
 
 ```bash
@@ -121,6 +132,7 @@ src/eml_lab/
   training.py      Adam loop, snapping, verification
   verify.py        exact raw-operator verifier
   benchmarks.py    shallow suite and artifact writing
+  comparison.py    optional PySR baseline comparison
   cli.py           argparse CLI
   app.py           Streamlit dashboard
 ```

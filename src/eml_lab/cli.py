@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from eml_lab.benchmarks import run_benchmark_suite
+from eml_lab.comparison import run_pysr_comparison
 from eml_lab.targets import list_targets
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
 
@@ -32,6 +33,14 @@ def build_parser() -> argparse.ArgumentParser:
     bench = subparsers.add_parser("bench", help="run an internal benchmark suite")
     bench.add_argument("--suite", choices=["shallow"], default="shallow")
     bench.add_argument("--output-dir", type=Path, default=Path("runs"))
+
+    compare = subparsers.add_parser("compare", help="run an optional PySR baseline comparison")
+    compare.add_argument("--target", choices=list_targets(), default="ln")
+    compare.add_argument("--output-dir", type=Path, default=Path("runs"))
+    compare.add_argument("--points", type=int, default=128)
+    compare.add_argument("--niterations", type=int, default=40)
+    compare.add_argument("--maxsize", type=int, default=20)
+    compare.add_argument("--seed", type=int, default=0)
 
     app = subparsers.add_parser("app", help="launch the local Streamlit app")
     app.add_argument(
@@ -64,6 +73,17 @@ def main(argv: list[str] | None = None) -> int:
         result = run_benchmark_suite(args.suite, args.output_dir)
         print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0 if result.recovery_rate == 1.0 else 2
+    if args.command == "compare":
+        result = run_pysr_comparison(
+            target=args.target,
+            output_dir=args.output_dir,
+            points=args.points,
+            niterations=args.niterations,
+            maxsize=args.maxsize,
+            seed=args.seed,
+        )
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0 if result.available else 3
     if args.command == "app":
         app_path = Path(__file__).with_name("app.py")
         command = [sys.executable, "-m", "streamlit", "run", str(app_path)]

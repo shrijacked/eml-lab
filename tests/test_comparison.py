@@ -1,0 +1,84 @@
+from pathlib import Path
+
+from eml_lab.comparison import (
+    ComparisonResult,
+    PySRStatus,
+    detect_pysr_environment,
+    run_pysr_comparison,
+)
+
+
+def test_detect_pysr_environment_reports_missing_dependencies(monkeypatch) -> None:
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    status = detect_pysr_environment()
+
+    assert not status.available
+    assert not status.pysr_installed
+    assert not status.julia_found
+    assert "PySR" in status.install_hint
+
+
+def test_run_pysr_comparison_writes_unavailable_summary(tmp_path: Path, monkeypatch) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    result = run_pysr_comparison("ln", tmp_path)
+
+    assert isinstance(result, ComparisonResult)
+    assert not result.available
+    assert result.pysr["status"] == "unavailable"
+    assert (tmp_path / "compare-ln" / "summary.json").exists()
+
+
+def test_run_pysr_comparison_uses_fake_pysr(monkeypatch, tmp_path: Path) -> None:
+    status = PySRStatus(
+        available=True,
+        pysr_installed=True,
+        julia_found=True,
+        julia_path="/usr/bin/julia",
+        reason=None,
+        install_hint="ok",
+    )
+
+    class FakeEquations:
+        def to_dict(self, orient: str = "records") -> list[dict[str, object]]:
+            assert orient == "records"
+            return [{"equation": "exp(x0)", "loss": 0.0}]
+
+        def to_csv(self, path: Path, index: bool = False) -> None:
+            Path(path).write_text("equation,loss\nexp(x0),0.0\n", encoding="utf-8")
+            assert not index
+
+    class FakePySRRegressor:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+            self.equations_ = FakeEquations()
+            self.fitted = False
+
+        def fit(self, x, y) -> None:
+            assert x.shape[1] == 1
+            assert len(y) == x.shape[0]
+            self.fitted = True
+
+        def sympy(self) -> str:
+            return "exp(x0)"
+
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", lambda: FakePySRRegressor)
+
+    result = run_pysr_comparison("exp", tmp_path, niterations=2, maxsize=8)
+
+    assert result.available
+    assert result.pysr["status"] == "ok"
+    assert result.pysr["best_equation"] == "exp(x0)"
+    assert (tmp_path / "compare-exp" / "summary.json").exists()
+    assert (tmp_path / "compare-exp" / "pysr" / "equations.csv").exists()

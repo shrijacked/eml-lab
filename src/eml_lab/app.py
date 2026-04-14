@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from eml_lab.benchmarks import benchmark_table, run_benchmark_suite
+from eml_lab.comparison import detect_pysr_environment, run_pysr_comparison
 from eml_lab.targets import PAPER_FIXTURES, get_target, list_targets
 from eml_lab.training import TrainConfig, train_target
 from eml_lab.trees import rpn_string
@@ -16,8 +17,8 @@ def main() -> None:
     st.title("EML Lab")
     st.caption("Differentiable formula discovery with one complex-valued binary operator.")
 
-    train_tab, snap_tab, bench_tab, paper_tab = st.tabs(
-        ["Train", "Snap", "Bench", "Paper Explorer"]
+    train_tab, snap_tab, bench_tab, compare_tab, paper_tab = st.tabs(
+        ["Train", "Snap", "Bench", "Compare", "Paper Explorer"]
     )
 
     with train_tab:
@@ -72,6 +73,30 @@ def main() -> None:
             st.metric("Recovery rate", f"{bench.recovery_rate:.0%}")
             st.write(f"Artifacts: `{bench.output_dir}`")
             st.dataframe(benchmark_table(bench), use_container_width=True)
+
+    with compare_tab:
+        status = detect_pysr_environment()
+        st.subheader("Optional PySR baseline")
+        if status.available:
+            st.success("PySR and Julia are available.")
+        else:
+            st.warning(status.reason or "PySR baseline unavailable.")
+            st.code(status.install_hint)
+            st.caption("You can still run the EML baseline; the result will include the PySR install guidance.")
+        compare_target = st.selectbox(
+            "Comparison target",
+            list_targets(),
+            index=list_targets().index("ln"),
+            key="compare_target",
+        )
+        if st.button("Run comparison"):
+            comparison = run_pysr_comparison(compare_target)
+            st.session_state["last_comparison"] = comparison
+        comparison = st.session_state.get("last_comparison")
+        if comparison is None:
+            st.info("Run a comparison to capture the EML baseline and optional PySR result.")
+        else:
+            st.json(comparison.to_dict())
 
     with paper_tab:
         fixture_name = st.selectbox("Known EML tree", list(PAPER_FIXTURES))

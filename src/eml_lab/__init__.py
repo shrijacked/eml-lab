@@ -1,6 +1,12 @@
 """EML Lab public API."""
 
 from eml_lab.benchmarks import BenchmarkResult, run_benchmark_suite
+from eml_lab.comparison import (
+    ComparisonResult,
+    PySRStatus,
+    detect_pysr_environment,
+    run_pysr_comparison,
+)
 from eml_lab.operators import StabilityConfig, StabilityStats, eml_exact, eml_train
 from eml_lab.soft_tree import SoftEMLTree, snap_tree
 from eml_lab.targets import TargetSpec, get_target, list_targets
@@ -10,9 +16,12 @@ from eml_lab.verify import VerificationReport, verify_tree
 
 __all__ = [
     "BenchmarkResult",
+    "ComparisonResult",
+    "PySRStatus",
     "SoftEMLTree",
     "StabilityConfig",
     "StabilityStats",
+    "detect_pysr_environment",
     "TargetSpec",
     "TrainConfig",
     "TrainResult",
@@ -24,6 +33,7 @@ __all__ = [
     "get_target",
     "list_targets",
     "run_benchmark_suite",
+    "run_pysr_comparison",
     "snap_tree",
     "to_rpn",
     "train_target",

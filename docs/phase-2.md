@@ -13,9 +13,9 @@ This should wrap the real EML engine. It should not replace it.
 
 ## External Benchmarks
 
-- Add PySR as an optional dependency.
-- Compare exact recovery, runtime, expression size, and extrapolation error.
-- Keep this optional so the quickstart stays small.
+- PySR comparison command now exists as an optional baseline.
+- Next step: expand from single-target comparisons into a full suite with aggregated metrics.
+- Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo
 
@@ -31,4 +31,3 @@ This should wrap the real EML engine. It should not replace it.
 - `sin(x)`
 
 These should be treated as research experiments, not v1 promises.
-
