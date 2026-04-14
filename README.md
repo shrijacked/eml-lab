@@ -53,6 +53,9 @@ python -m eml_lab app
 
 The app runs Streamlit locally. It uses the same package APIs as the CLI.
 
+Hosted-demo packaging lives in [docs/hosted-demo.md](docs/hosted-demo.md). The repo
+includes Streamlit Cloud files, a Dockerfile, and local smoke commands.
+
 ## Screenshots
 
 ![EML Lab train tab](docs/assets/train-tab.png)
@@ -221,6 +224,16 @@ The same check is available as a campaign suite:
 python -m eml_lab campaign --suite phase2-operator-zoo --output-dir runs
 ```
 
+Run the dashboard through Docker:
+
+```bash
+docker build -t eml-lab .
+docker run --rm -p 8501:8501 eml-lab
+```
+
+See [docs/hosted-demo.md](docs/hosted-demo.md) for Streamlit Community Cloud settings
+and container notes.
+
 Run the first Phase 2 campaign suite:
 
 ```bash
@@ -330,5 +343,5 @@ src/eml_lab/
 - shipped: longer-horizon snapshot history reports over saved research snapshots
 - shipped: operator zoo benchmark/report for EML-like numerical variants
 - shipped: operator zoo campaign suite
-- next milestone: richer per-target research reports and hosted demo packaging
-- hosted demo
+- shipped: hosted-demo packaging for Streamlit Cloud and Docker
+- next milestone: richer per-target research reports and final polish

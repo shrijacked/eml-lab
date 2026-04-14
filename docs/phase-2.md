@@ -36,6 +36,13 @@ This should wrap the real EML engine. It should not replace it.
 - Stabilized variants are treated as training/research candidates, not verifier replacements.
 - `phase2-operator-zoo` runs the zoo as a repeatable campaign artifact.
 
+## Hosted Demo
+
+- Streamlit Cloud packaging now exists through `runtime.txt`, `requirements.txt`, and `.streamlit/config.toml`.
+- Docker packaging now exists through `Dockerfile` and `.dockerignore`.
+- Deployment notes live in [docs/hosted-demo.md](/Users/owlxshri/Desktop/personal%20projects/paper_viz/docs/hosted-demo.md).
+- No external deployment is claimed until a host/account is actually connected.
+
 ## Hard Targets
 
 - Research-tier target specs now exist for `x*y`, `x/y`, `x^2`, and `sin(x)`.
