@@ -82,7 +82,10 @@ def main() -> None:
         else:
             st.warning(status.reason or "PySR baseline unavailable.")
             st.code(status.install_hint)
-            st.caption("You can still run the EML baseline; the result will include the PySR install guidance.")
+            st.caption(
+                "You can still run the EML baseline; "
+                "the result will include the PySR install guidance."
+            )
         compare_target = st.selectbox(
             "Comparison target",
             list_targets(),
