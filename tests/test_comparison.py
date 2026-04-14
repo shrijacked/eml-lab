@@ -8,6 +8,7 @@ from eml_lab.comparison import (
     MethodComparisonExportResult,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
+    MethodComparisonSnapshotResult,
     PySRStatus,
     aggregate_method_comparisons,
     detect_pysr_environment,
@@ -18,6 +19,7 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    snapshot_method_comparisons,
     summarize_method_comparisons,
 )
 
@@ -415,3 +417,41 @@ def test_export_method_comparisons_writes_filtered_bundle(
     assert Path(export.manifest_path).exists()
     summary = Path(export.summary_path).read_text(encoding="utf-8")
     assert '"run_count": 1' in summary
+
+
+def test_snapshot_method_comparisons_writes_report_bundle(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    run_method_comparison("exp", tmp_path, seed=0)
+    run_method_comparison("exp", tmp_path, seed=1)
+    run_method_comparison("ln", tmp_path, seed=0)
+
+    snapshot = snapshot_method_comparisons(
+        tmp_path,
+        tmp_path / "snapshots",
+        targets=["exp"],
+        seeds=[1],
+    )
+
+    assert isinstance(snapshot, MethodComparisonSnapshotResult)
+    assert snapshot.run_count == 1
+    assert Path(snapshot.summary_path).exists()
+    assert Path(snapshot.report_path).exists()
+    assert Path(snapshot.runs_csv_path).exists()
+    assert Path(snapshot.latest_csv_path).exists()
+    assert Path(snapshot.manifest_path).exists()
+    assert snapshot.plot_paths
+    assert all(Path(path).exists() for path in snapshot.plot_paths.values())
+    report = Path(snapshot.report_path).read_text(encoding="utf-8")
+    assert "# Method Comparison Snapshot" in report
+    assert "Runs: 1" in report

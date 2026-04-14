@@ -24,6 +24,7 @@ This should wrap the real EML engine. It should not replace it.
 - Saved cross-method runs can now be aggregated into target-level analytics.
 - The app now supports target/status/seed filtering plus artifact-backed charts over those analytics.
 - Filtered saved-run analytics can now be exported as JSON/CSV bundles.
+- Filtered saved-run analytics can now be packaged as snapshot bundles with markdown reports and PNG plots.
 - Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo

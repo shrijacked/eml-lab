@@ -42,6 +42,7 @@ python -m eml_lab compare-methods --target ln
 python -m eml_lab compare-methods-history --root runs
 python -m eml_lab compare-methods-report --root runs
 python -m eml_lab compare-methods-export --root runs --output-dir runs/exports
+python -m eml_lab compare-methods-snapshot --root runs --output-dir runs/snapshots
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -149,6 +150,27 @@ This writes a timestamped export bundle with:
 
 The app can export the currently filtered saved-run view through the same package API.
 
+Build a report-grade research snapshot:
+
+```bash
+python -m eml_lab compare-methods-snapshot --root runs --output-dir runs/snapshots --target exp --seed 1
+```
+
+This writes a timestamped snapshot bundle with:
+- `summary.json`
+- `runs.csv`
+- `latest_by_target.csv`
+- `report.md`
+- `runs_by_target.png`
+- `required_success_rate_by_target.png`
+- `runs_by_seed.png`
+- `status_counts.png`
+- `error_trend.png`
+- `manifest.json`
+
+The Compare tab can build the same filtered snapshot bundle and preview the markdown
+report directly in the dashboard.
+
 Run the first Phase 2 campaign suite:
 
 ```bash
@@ -253,6 +275,7 @@ src/eml_lab/
 - shipped: multi-run analytics for saved cross-method artifacts
 - shipped: artifact-backed charts and target/seed filtering on top of saved analytics
 - shipped: JSON/CSV export bundles for filtered saved-run analytics
-- next milestone: richer charting and longer-horizon trend views for research histories
+- shipped: report-grade snapshot bundles with markdown summaries and plot images
+- next milestone: longer-horizon trend views and richer per-target research reports
 - hosted demo
 - operator zoo search for EML cousins

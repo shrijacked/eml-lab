@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import math
 import shutil
 import time
 from collections.abc import Mapping, Sequence
@@ -12,12 +13,17 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import matplotlib
 import torch
 
 from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
 from eml_lab.targets import TargetSpec, get_target, list_targets, sample_inputs
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
 
 
 @dataclass(frozen=True)
@@ -239,6 +245,23 @@ class MethodComparisonExportResult:
     summary_path: str
     runs_csv_path: str
     latest_csv_path: str
+    filters: dict[str, object]
+    run_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MethodComparisonSnapshotResult:
+    source_root: str
+    output_dir: str
+    manifest_path: str
+    summary_path: str
+    report_path: str
+    runs_csv_path: str
+    latest_csv_path: str
+    plot_paths: dict[str, str]
     filters: dict[str, object]
     run_count: int
 
@@ -629,12 +652,12 @@ def export_method_comparisons(
         seeds=seeds,
         required_only=required_only,
     )
-    filters = {
-        "targets": list(targets or []),
-        "statuses": list(statuses or []),
-        "seeds": list(seeds or []),
-        "required_only": required_only,
-    }
+    filters = _filters_payload(
+        targets=targets,
+        statuses=statuses,
+        seeds=seeds,
+        required_only=required_only,
+    )
     return write_method_comparison_export(
         filtered,
         output_dir,
@@ -655,19 +678,10 @@ def write_method_comparison_export(
     export_root.mkdir(parents=True, exist_ok=True)
 
     report = aggregate_method_comparisons(entries, root=root)
-    summary_path = export_root / "summary.json"
-    runs_csv_path = export_root / "runs.csv"
-    latest_csv_path = export_root / "latest_by_target.csv"
     filters_payload = dict(filters or {})
-
-    summary_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
-    _write_csv(
-        runs_csv_path,
-        [entry.to_dict() for entry in report.runs],
-    )
-    _write_csv(
-        latest_csv_path,
-        [row.to_dict() for row in report.latest_by_target],
+    summary_path, runs_csv_path, latest_csv_path = _write_method_comparison_bundle_files(
+        export_root,
+        report,
     )
     manifest = write_artifact_manifest(
         export_root,
@@ -691,6 +705,98 @@ def write_method_comparison_export(
         summary_path=str(summary_path),
         runs_csv_path=str(runs_csv_path),
         latest_csv_path=str(latest_csv_path),
+        filters=filters_payload,
+        run_count=report.run_count,
+    )
+
+
+def snapshot_method_comparisons(
+    root: str | Path = "runs",
+    output_dir: str | Path = "runs/snapshots",
+    *,
+    targets: Sequence[str] | None = None,
+    statuses: Sequence[str] | None = None,
+    seeds: Sequence[int] | None = None,
+    required_only: bool = False,
+) -> MethodComparisonSnapshotResult:
+    entries = find_method_comparisons(root)
+    filtered = filter_method_comparisons(
+        entries,
+        targets=targets,
+        statuses=statuses,
+        seeds=seeds,
+        required_only=required_only,
+    )
+    filters = _filters_payload(
+        targets=targets,
+        statuses=statuses,
+        seeds=seeds,
+        required_only=required_only,
+    )
+    return write_method_comparison_snapshot(
+        filtered,
+        output_dir,
+        root=root,
+        filters=filters,
+    )
+
+
+def write_method_comparison_snapshot(
+    entries: Sequence[MethodComparisonIndexEntry],
+    output_dir: str | Path,
+    *,
+    root: str | Path = "runs",
+    filters: Mapping[str, object] | None = None,
+) -> MethodComparisonSnapshotResult:
+    timestamp = _timestamp_slug()
+    snapshot_root = Path(output_dir) / f"method-compare-snapshot-{timestamp}"
+    snapshot_root.mkdir(parents=True, exist_ok=True)
+
+    report = aggregate_method_comparisons(entries, root=root)
+    filters_payload = dict(filters or {})
+    summary_path, runs_csv_path, latest_csv_path = _write_method_comparison_bundle_files(
+        snapshot_root,
+        report,
+    )
+    plot_paths = _write_method_comparison_plots(snapshot_root, report)
+    report_path = snapshot_root / "report.md"
+    report_path.write_text(
+        _render_method_comparison_snapshot_report(
+            report,
+            filters=filters_payload,
+            plot_paths=plot_paths,
+        ),
+        encoding="utf-8",
+    )
+    manifest = write_artifact_manifest(
+        snapshot_root,
+        files=[
+            ArtifactFile(label="summary", path=str(summary_path), kind="json"),
+            ArtifactFile(label="runs-csv", path=str(runs_csv_path), kind="csv"),
+            ArtifactFile(label="latest-by-target-csv", path=str(latest_csv_path), kind="csv"),
+            ArtifactFile(label="report", path=str(report_path), kind="markdown"),
+            *[
+                ArtifactFile(label=f"plot-{label}", path=path, kind="png")
+                for label, path in plot_paths.items()
+            ],
+        ],
+        metadata={
+            "kind": "method-comparison-snapshot",
+            "source_root": str(Path(root)),
+            "run_count": report.run_count,
+            "target_count": report.target_count,
+            "filters": filters_payload,
+        },
+    )
+    return MethodComparisonSnapshotResult(
+        source_root=str(Path(root)),
+        output_dir=str(snapshot_root),
+        manifest_path=manifest.manifest_path,
+        summary_path=str(summary_path),
+        report_path=str(report_path),
+        runs_csv_path=str(runs_csv_path),
+        latest_csv_path=str(latest_csv_path),
+        plot_paths=plot_paths,
         filters=filters_payload,
         run_count=report.run_count,
     )
@@ -792,6 +898,243 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _filters_payload(
+    *,
+    targets: Sequence[str] | None,
+    statuses: Sequence[str] | None,
+    seeds: Sequence[int] | None,
+    required_only: bool,
+) -> dict[str, object]:
+    return {
+        "targets": list(targets or []),
+        "statuses": list(statuses or []),
+        "seeds": list(seeds or []),
+        "required_only": required_only,
+    }
+
+
+def _write_method_comparison_bundle_files(
+    root: Path,
+    report: MethodComparisonAggregate,
+) -> tuple[Path, Path, Path]:
+    summary_path = root / "summary.json"
+    runs_csv_path = root / "runs.csv"
+    latest_csv_path = root / "latest_by_target.csv"
+    summary_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    _write_csv(runs_csv_path, [entry.to_dict() for entry in report.runs])
+    _write_csv(latest_csv_path, [row.to_dict() for row in report.latest_by_target])
+    return summary_path, runs_csv_path, latest_csv_path
+
+
+def _write_method_comparison_plots(
+    root: Path,
+    report: MethodComparisonAggregate,
+) -> dict[str, str]:
+    plot_paths = {
+        "runs_by_target": str(root / "runs_by_target.png"),
+        "required_success_rate_by_target": str(root / "required_success_rate_by_target.png"),
+        "runs_by_seed": str(root / "runs_by_seed.png"),
+        "status_counts": str(root / "status_counts.png"),
+        "error_trend": str(root / "error_trend.png"),
+    }
+    _save_bar_chart(
+        Path(plot_paths["runs_by_target"]),
+        {row.target: row.runs for row in report.latest_by_target},
+        title="Runs by Target",
+        ylabel="Runs",
+    )
+    _save_bar_chart(
+        Path(plot_paths["required_success_rate_by_target"]),
+        {row.target: row.required_success_rate for row in report.latest_by_target},
+        title="Required Success Rate by Target",
+        ylabel="Success Rate",
+        ylim=(0.0, 1.0),
+    )
+    _save_bar_chart(
+        Path(plot_paths["runs_by_seed"]),
+        _seed_count_values(report.runs),
+        title="Runs by Seed",
+        ylabel="Runs",
+    )
+    _save_bar_chart(
+        Path(plot_paths["status_counts"]),
+        report.status_counts,
+        title="Status Counts",
+        ylabel="Runs",
+    )
+    _save_error_trend_chart(Path(plot_paths["error_trend"]), report.runs)
+    return plot_paths
+
+
+def _render_method_comparison_snapshot_report(
+    report: MethodComparisonAggregate,
+    *,
+    filters: Mapping[str, object],
+    plot_paths: Mapping[str, str],
+) -> str:
+    generated_at = datetime.now(UTC).isoformat()
+    lines = [
+        "# Method Comparison Snapshot",
+        "",
+        f"Generated at: `{generated_at}`",
+        f"Source root: `{report.root}`",
+        "",
+        "## Scope",
+        f"- Runs: {report.run_count}",
+        f"- Targets: {report.target_count}",
+        f"- Required success rate: {report.required_success_rate:.0%}",
+        f"- PySR availability rate: {report.pysr_available_rate:.0%}",
+        f"- Filters: `{json.dumps(dict(filters), sort_keys=True)}`",
+        "",
+        "## Status Counts",
+    ]
+    if report.status_counts:
+        lines.extend(
+            f"- `{status}`: {count}" for status, count in sorted(report.status_counts.items())
+        )
+    else:
+        lines.append("- No saved runs matched the filter.")
+        lines.extend(
+        [
+            "",
+            "## Latest By Target",
+            (
+                "| target | runs | seed_count | required_success_rate | latest_status | "
+                "best_gradient_max_mse | best_agentic_max_mse | latest_output_dir |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if report.latest_by_target:
+        for row in report.latest_by_target:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        row.target,
+                        str(row.runs),
+                        str(row.seed_count),
+                        f"{row.required_success_rate:.2%}",
+                        row.latest_status,
+                        _markdown_scalar(row.best_gradient_max_mse),
+                        _markdown_scalar(row.best_agentic_max_mse),
+                        f"`{row.latest_output_dir}`",
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| _none_ | 0 | 0 | 0.00% | n/a | n/a | n/a | `n/a` |")
+        lines.extend(
+        [
+            "",
+            "## Recent Runs",
+            (
+                "| created_at | target | seed | status | required_success | "
+                "gradient_max_mse | agentic_max_mse | output_dir |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    if report.runs:
+        for entry in report.runs[:10]:
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        entry.created_at,
+                        entry.target,
+                        _markdown_scalar(entry.seed),
+                        entry.status,
+                        "yes" if entry.required_success else "no",
+                        _markdown_scalar(entry.gradient_max_mse),
+                        _markdown_scalar(entry.agentic_max_mse),
+                        f"`{entry.output_dir}`",
+                    ]
+                )
+                + " |"
+            )
+    else:
+        lines.append("| _none_ | n/a | n/a | n/a | no | n/a | n/a | `n/a` |")
+    lines.extend(["", "## Plot Files"])
+    lines.extend(f"- `{label}`: `{path}`" for label, path in plot_paths.items())
+    return "\n".join(lines) + "\n"
+
+
+def _save_bar_chart(
+    path: Path,
+    values: Mapping[str, float | int],
+    *,
+    title: str,
+    ylabel: str,
+    ylim: tuple[float, float] | None = None,
+) -> None:
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if values:
+        labels = list(values.keys())
+        numbers = [float(value) for value in values.values()]
+        ax.bar(labels, numbers, color="#4C78A8")
+        ax.tick_params(axis="x", labelrotation=20)
+    else:
+        _render_no_data(ax, title)
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def _save_error_trend_chart(path: Path, entries: Sequence[MethodComparisonIndexEntry]) -> None:
+    ordered = sorted(entries, key=lambda entry: entry.created_at)
+    fig, ax = plt.subplots(figsize=(7, 4))
+    if ordered:
+        x_values = list(range(1, len(ordered) + 1))
+        gradient_values = [
+            entry.gradient_max_mse if entry.gradient_max_mse is not None else math.nan
+            for entry in ordered
+        ]
+        agentic_values = [
+            entry.agentic_max_mse if entry.agentic_max_mse is not None else math.nan
+            for entry in ordered
+        ]
+        ax.plot(x_values, gradient_values, marker="o", label="gradient")
+        ax.plot(x_values, agentic_values, marker="o", label="agentic")
+        ax.legend()
+    else:
+        _render_no_data(ax, "Error Trend")
+    ax.set_title("Error Trend")
+    ax.set_xlabel("Run Order")
+    ax.set_ylabel("Max MSE")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def _render_no_data(ax: plt.Axes, title: str) -> None:
+    ax.text(0.5, 0.5, "No data", ha="center", va="center", fontsize=12)
+    ax.set_title(title)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def _seed_count_values(entries: Sequence[MethodComparisonIndexEntry]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        label = str(entry.seed) if entry.seed is not None else "unknown"
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
+def _markdown_scalar(value: object) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
 
 
 def _default_train_steps(spec: TargetSpec) -> int:

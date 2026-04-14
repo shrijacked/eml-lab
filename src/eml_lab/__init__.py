@@ -13,6 +13,7 @@ from eml_lab.comparison import (
     MethodComparisonExportResult,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
+    MethodComparisonSnapshotResult,
     PySRStatus,
     aggregate_method_comparisons,
     detect_pysr_environment,
@@ -23,8 +24,10 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    snapshot_method_comparisons,
     summarize_method_comparisons,
     write_method_comparison_export,
+    write_method_comparison_snapshot,
 )
 from eml_lab.experiments import ExperimentRecord
 from eml_lab.operators import StabilityConfig, StabilityStats, eml_exact, eml_train
@@ -51,6 +54,7 @@ __all__ = [
     "MethodComparisonExportResult",
     "MethodComparisonIndexEntry",
     "MethodComparisonResult",
+    "MethodComparisonSnapshotResult",
     "OrchestratorConfig",
     "OrchestratorResult",
     "PySRStatus",
@@ -77,9 +81,11 @@ __all__ = [
     "run_pysr_compare_suite",
     "run_pysr_comparison",
     "snap_tree",
+    "snapshot_method_comparisons",
     "summarize_method_comparisons",
     "to_rpn",
     "train_target",
     "verify_tree",
     "write_method_comparison_export",
+    "write_method_comparison_snapshot",
 ]

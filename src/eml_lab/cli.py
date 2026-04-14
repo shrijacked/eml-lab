@@ -17,6 +17,7 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    snapshot_method_comparisons,
     summarize_method_comparisons,
 )
 from eml_lab.targets import get_target, list_targets
@@ -115,6 +116,17 @@ def build_parser() -> argparse.ArgumentParser:
     compare_export.add_argument("--status", action="append", default=None)
     compare_export.add_argument("--seed", action="append", type=int, default=None)
     compare_export.add_argument("--required-only", action="store_true")
+
+    compare_snapshot = subparsers.add_parser(
+        "compare-methods-snapshot",
+        help="build a report-grade snapshot bundle from filtered cross-method comparison artifacts",
+    )
+    compare_snapshot.add_argument("--root", type=Path, default=Path("runs"))
+    compare_snapshot.add_argument("--output-dir", type=Path, default=Path("runs/snapshots"))
+    compare_snapshot.add_argument("--target", action="append", default=None)
+    compare_snapshot.add_argument("--status", action="append", default=None)
+    compare_snapshot.add_argument("--seed", action="append", type=int, default=None)
+    compare_snapshot.add_argument("--required-only", action="store_true")
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -218,6 +230,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "compare-methods-export":
         result = export_method_comparisons(
+            args.root,
+            args.output_dir,
+            targets=args.target,
+            statuses=args.status,
+            seeds=args.seed,
+            required_only=args.required_only,
+        )
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
+    if args.command == "compare-methods-snapshot":
+        result = snapshot_method_comparisons(
             args.root,
             args.output_dir,
             targets=args.target,

@@ -25,6 +25,7 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    snapshot_method_comparisons,
     summarize_method_comparisons,
 )
 from eml_lab.mutations import route_to_tree
@@ -481,6 +482,28 @@ def main() -> None:
             if export_result is not None:
                 st.success(f"Exported filtered analytics to `{export_result.output_dir}`")
                 st.json(export_result.to_dict())
+            snapshot_root = st.text_input(
+                "Snapshot root",
+                value="runs/snapshots",
+                key="method_compare_snapshot_root",
+            )
+            if st.button("Build research snapshot", key="snapshot_method_compare_filtered"):
+                st.session_state["last_method_compare_snapshot"] = snapshot_method_comparisons(
+                    history_root,
+                    snapshot_root,
+                    targets=selected_targets,
+                    statuses=selected_statuses,
+                    seeds=selected_seeds,
+                    required_only=required_only,
+                )
+            snapshot_result = st.session_state.get("last_method_compare_snapshot")
+            if snapshot_result is not None:
+                st.success(f"Built research snapshot at `{snapshot_result.output_dir}`")
+                st.json(snapshot_result.to_dict())
+                report_path = Path(snapshot_result.report_path)
+                if report_path.exists():
+                    with st.expander("Snapshot report preview"):
+                        st.markdown(report_path.read_text(encoding="utf-8"))
             if filtered_history:
                 selected_entry = st.selectbox(
                     "Saved run",
