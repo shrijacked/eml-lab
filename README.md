@@ -41,6 +41,14 @@ python -m eml_lab app
 
 The app runs Streamlit locally. It uses the same package APIs as the CLI.
 
+## Screenshots
+
+![EML Lab train tab](docs/assets/train-tab.png)
+
+![EML Lab snap tab](docs/assets/snap-tab.png)
+
+![EML Lab bench tab](docs/assets/bench-tab.png)
+
 ## CLI
 
 Train one target:
