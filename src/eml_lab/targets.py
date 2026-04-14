@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 
@@ -12,6 +13,7 @@ from eml_lab.trees import TreeNode
 
 TargetFunction = Callable[[dict[str, torch.Tensor]], torch.Tensor]
 Route = list[tuple[str, str]]
+TargetTier = Literal["stable", "research"]
 
 
 @dataclass(frozen=True)
@@ -23,9 +25,13 @@ class TargetSpec:
     interpolation_domain: dict[str, tuple[float, float]]
     extrapolation_domain: dict[str, tuple[float, float]]
     default_depth: int
+    expected_depth: int | None
     function: TargetFunction
-    known_tree: TreeNode
+    known_tree: TreeNode | None
     known_route: Route | None
+    tier: TargetTier
+    comparison_eligible: bool
+    failure_modes: tuple[str, ...]
     notes: str
 
 
@@ -43,6 +49,27 @@ def _ln(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
 
 def _identity(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
     return _x(inputs)
+
+
+def _y(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    return inputs["y"].to(dtype=COMPLEX_DTYPE)
+
+
+def _square(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    x = _x(inputs)
+    return x * x
+
+
+def _mul(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    return _x(inputs) * _y(inputs)
+
+
+def _div(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    return _x(inputs) / _y(inputs)
+
+
+def _sin(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+    return torch.sin(_x(inputs))
 
 
 def one_tree() -> TreeNode:
@@ -107,9 +134,13 @@ TARGETS: dict[str, TargetSpec] = {
         interpolation_domain={"x": (-0.9, 0.9)},
         extrapolation_domain={"x": (-1.5, 1.5)},
         default_depth=1,
+        expected_depth=1,
         function=_exp,
         known_tree=exp_tree(),
         known_route=[("x", "1")],
+        tier="stable",
+        comparison_eligible=True,
+        failure_modes=(),
         notes="Depth-1 paper identity: eml(x, 1).",
     ),
     "ln": TargetSpec(
@@ -120,9 +151,13 @@ TARGETS: dict[str, TargetSpec] = {
         interpolation_domain={"x": (0.45, 1.9)},
         extrapolation_domain={"x": (0.2, 2.5)},
         default_depth=3,
+        expected_depth=3,
         function=_ln,
         known_tree=ln_tree(),
         known_route=[("1", "x"), ("cell0", "1"), ("1", "cell1")],
+        tier="stable",
+        comparison_eligible=True,
+        failure_modes=(),
         notes="Paper identity: eml(1, eml(eml(1, x), 1)).",
     ),
     "identity": TargetSpec(
@@ -133,10 +168,94 @@ TARGETS: dict[str, TargetSpec] = {
         interpolation_domain={"x": (0.45, 1.9)},
         extrapolation_domain={"x": (0.2, 2.5)},
         default_depth=4,
+        expected_depth=4,
         function=_identity,
         known_tree=identity_tree(),
         known_route=[("1", "x"), ("cell0", "1"), ("1", "cell1"), ("cell2", "1")],
+        tier="stable",
+        comparison_eligible=True,
+        failure_modes=(),
         notes="Non-trivial identity route: exp(ln(x)) expressed in EML form.",
+    ),
+    "square": TargetSpec(
+        name="square",
+        display_name="x^2",
+        variables=("x",),
+        train_domain={"x": (-1.5, 1.5)},
+        interpolation_domain={"x": (-1.2, 1.2)},
+        extrapolation_domain={"x": (-2.0, 2.0)},
+        default_depth=4,
+        expected_depth=4,
+        function=_square,
+        known_tree=None,
+        known_route=None,
+        tier="research",
+        comparison_eligible=False,
+        failure_modes=(
+            "may collapse to exp/log surrogates instead of quadratic growth",
+            "gradient search can settle on locally smooth but globally wrong trees",
+        ),
+        notes="Research target. Polynomial recovery is not a shipped claim in v1 or Phase 2.",
+    ),
+    "mul": TargetSpec(
+        name="mul",
+        display_name="x*y",
+        variables=("x", "y"),
+        train_domain={"x": (-1.25, 1.25), "y": (0.4, 1.8)},
+        interpolation_domain={"x": (-1.0, 1.0), "y": (0.5, 1.6)},
+        extrapolation_domain={"x": (-1.5, 1.5), "y": (0.3, 2.0)},
+        default_depth=4,
+        expected_depth=4,
+        function=_mul,
+        known_tree=None,
+        known_route=None,
+        tier="research",
+        comparison_eligible=False,
+        failure_modes=(
+            "paired-sample training may underconstrain multivariate behavior",
+            "exact verifier can expose interpolation fits that fail on extrapolation",
+        ),
+        notes="Research target. Multivariate multiplication is tracked as an explicit experiment.",
+    ),
+    "div": TargetSpec(
+        name="div",
+        display_name="x/y",
+        variables=("x", "y"),
+        train_domain={"x": (-1.0, 1.0), "y": (0.5, 2.0)},
+        interpolation_domain={"x": (-0.8, 0.8), "y": (0.6, 1.8)},
+        extrapolation_domain={"x": (-1.25, 1.25), "y": (0.35, 2.2)},
+        default_depth=5,
+        expected_depth=5,
+        function=_div,
+        known_tree=None,
+        known_route=None,
+        tier="research",
+        comparison_eligible=False,
+        failure_modes=(
+            "division is numerically brittle near small denominators",
+            "candidate trees can look good on train points but break under extrapolation",
+        ),
+        notes="Research target. Domains stay away from zero to avoid trivial singularities.",
+    ),
+    "sin": TargetSpec(
+        name="sin",
+        display_name="sin(x)",
+        variables=("x",),
+        train_domain={"x": (-1.5, 1.5)},
+        interpolation_domain={"x": (-1.25, 1.25)},
+        extrapolation_domain={"x": (-3.0, 3.0)},
+        default_depth=5,
+        expected_depth=5,
+        function=_sin,
+        known_tree=None,
+        known_route=None,
+        tier="research",
+        comparison_eligible=False,
+        failure_modes=(
+            "periodicity is hard to express with shallow EML route search",
+            "models may overfit the local Taylor-like region and fail outside it",
+        ),
+        notes="Research target. Trigonometric recovery remains exploratory, not promised.",
     ),
 }
 
@@ -153,8 +272,17 @@ PAPER_FIXTURES: dict[str, TreeNode] = {
 }
 
 
-def list_targets() -> list[str]:
-    return sorted(TARGETS)
+def list_targets(
+    tier: TargetTier | None = None, *, comparison_eligible: bool | None = None
+) -> list[str]:
+    names = sorted(TARGETS)
+    if tier is not None:
+        names = [name for name in names if TARGETS[name].tier == tier]
+    if comparison_eligible is not None:
+        names = [
+            name for name in names if TARGETS[name].comparison_eligible == comparison_eligible
+        ]
+    return names
 
 
 def get_target(name: str) -> TargetSpec:

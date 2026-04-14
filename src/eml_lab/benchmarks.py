@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
 from eml_lab.training import TrainConfig, TrainResult, train_target, write_train_artifacts
 
 
@@ -14,6 +15,7 @@ from eml_lab.training import TrainConfig, TrainResult, train_target, write_train
 class BenchmarkResult:
     suite: str
     output_dir: str
+    manifest_path: str
     runs: tuple[dict[str, object], ...]
 
     @property
@@ -22,10 +24,16 @@ class BenchmarkResult:
             return 0.0
         return sum(1 for run in self.runs if run["success"]) / len(self.runs)
 
+    @property
+    def success(self) -> bool:
+        return self.recovery_rate == 1.0
+
     def to_dict(self) -> dict[str, object]:
         return {
             "suite": self.suite,
             "output_dir": self.output_dir,
+            "manifest_path": self.manifest_path,
+            "success": self.success,
             "recovery_rate": self.recovery_rate,
             "runs": list(self.runs),
         }
@@ -47,10 +55,11 @@ def run_benchmark_suite(suite: str = "shallow", output_dir: str | Path = "runs")
     root.mkdir(parents=True, exist_ok=True)
 
     run_summaries: list[dict[str, object]] = []
+    artifact_files: list[ArtifactFile] = []
     for index, config in enumerate(shallow_suite_configs()):
         result: TrainResult = train_target(config)
         run_dir = root / f"{index:02d}-{config.target}-seed{config.seed}"
-        write_train_artifacts(result, run_dir)
+        manifest = write_train_artifacts(result, run_dir)
         run_summaries.append(
             {
                 "target": config.target,
@@ -62,11 +71,36 @@ def run_benchmark_suite(suite: str = "shallow", output_dir: str | Path = "runs")
                 "snap_source": result.snap_source,
                 "elapsed_seconds": result.elapsed_seconds,
                 "run_dir": str(run_dir),
+                "manifest_path": manifest.manifest_path,
             }
         )
+        artifact_files.extend(
+            [
+                ArtifactFile(label=f"{config.target}-run", path=str(run_dir), kind="directory"),
+                ArtifactFile(
+                    label=f"{config.target}-manifest",
+                    path=manifest.manifest_path,
+                    kind="json",
+                ),
+            ]
+        )
 
-    benchmark = BenchmarkResult(suite=suite, output_dir=str(root), runs=tuple(run_summaries))
-    (root / "summary.json").write_text(json.dumps(benchmark.to_dict(), indent=2), encoding="utf-8")
+    summary_path = root / "summary.json"
+    manifest = write_artifact_manifest(
+        root,
+        files=[
+            ArtifactFile(label="summary", path=str(summary_path), kind="json"),
+            *artifact_files,
+        ],
+        metadata={"kind": "benchmark", "suite": suite},
+    )
+    benchmark = BenchmarkResult(
+        suite=suite,
+        output_dir=str(root),
+        manifest_path=manifest.manifest_path,
+        runs=tuple(run_summaries),
+    )
+    summary_path.write_text(json.dumps(benchmark.to_dict(), indent=2), encoding="utf-8")
     return benchmark
 
 

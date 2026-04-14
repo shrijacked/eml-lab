@@ -11,6 +11,7 @@ from typing import Literal
 
 import torch
 
+from eml_lab.artifacts import ArtifactFile, ArtifactManifest, write_artifact_manifest
 from eml_lab.operators import StabilityConfig, eml_exact
 from eml_lab.soft_tree import SoftEMLTree
 from eml_lab.targets import TargetSpec, get_target, sample_inputs
@@ -208,18 +209,35 @@ def best_discrete_tree(
     return best_tree, best_loss
 
 
-def write_train_artifacts(result: TrainResult, output_dir: Path) -> None:
+def write_train_artifacts(result: TrainResult, output_dir: Path) -> ArtifactManifest:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "metrics.json").write_text(
+    metrics_path = output_dir / "metrics.json"
+    tree_path = output_dir / "tree.json"
+    loss_path = output_dir / "loss.csv"
+    metrics_path.write_text(
         json.dumps(result.to_metrics_dict(), indent=2, default=str),
         encoding="utf-8",
     )
-    (output_dir / "tree.json").write_text(
+    tree_path.write_text(
         json.dumps(tree_to_json(result.tree), indent=2),
         encoding="utf-8",
     )
-    with (output_dir / "loss.csv").open("w", newline="", encoding="utf-8") as handle:
+    with loss_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(["step", "loss"])
         for step, loss in enumerate(result.losses):
             writer.writerow([step, loss])
+    return write_artifact_manifest(
+        output_dir,
+        files=[
+            ArtifactFile(label="metrics", path=str(metrics_path), kind="json"),
+            ArtifactFile(label="tree", path=str(tree_path), kind="json"),
+            ArtifactFile(label="loss", path=str(loss_path), kind="csv"),
+        ],
+        metadata={
+            "kind": "train",
+            "target": result.target,
+            "success": result.success,
+            "rpn": result.rpn,
+        },
+    )

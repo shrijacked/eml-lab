@@ -36,6 +36,9 @@ python -m pip install -e ".[dev]"
 python -m pytest
 python -m eml_lab train --target ln --depth 3 --seed 0
 python -m eml_lab bench --suite shallow
+python -m eml_lab campaign --suite phase2-foundation
+python -m eml_lab campaign --suite phase2-research
+python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
 
@@ -85,6 +88,46 @@ missing and how to install it, rather than failing mysteriously. This follows th
 project's documented install path: `pip install pysr`, with Julia dependencies installed
 at first import.
 
+Run the aggregated compare suite:
+
+```bash
+python -m eml_lab compare-suite --suite shallow --output-dir runs
+```
+
+This executes the optional baseline over all stable compare-eligible targets and writes
+an aggregate summary plus per-target manifests. If PySR or Julia is missing, the suite
+still writes the EML baselines and install guidance, then exits with code `3`.
+
+Run the first Phase 2 campaign suite:
+
+```bash
+python -m eml_lab campaign --suite phase2-foundation --output-dir runs
+```
+
+This writes a campaign summary plus per-step manifests for the shallow benchmark and
+optional comparison runs. Missing PySR stays non-fatal inside the campaign because the
+comparison adapter is explicitly optional.
+
+Run the research-tier hard-target campaign:
+
+```bash
+python -m eml_lab campaign --suite phase2-research --output-dir runs
+```
+
+This suite intentionally tracks `x^2`, `x*y`, division, and `sin(x)` as research
+experiments. Failures stay visible in the artifacts with target tier, expected depth,
+known failure modes, and verifier output; they are not reported as solved.
+
+Run the local proposer/evaluator/pruner loop:
+
+```bash
+python -m eml_lab orchestrate --target ln --budget 24 --beam-width 6 --seed-count 4
+```
+
+This starts from deterministic perturbations of the target's known route, evaluates
+full snapped trees with the exact verifier, and writes a leaderboard plus JSONL event
+log. It is local-only and CPU-only.
+
 Launch the dashboard:
 
 ```bash
@@ -131,16 +174,29 @@ src/eml_lab/
   soft_tree.py     differentiable soft-routed EML tree
   training.py      Adam loop, snapping, verification
   verify.py        exact raw-operator verifier
+  artifacts.py     shared artifact manifest writer
+  experiments.py   shared experiment result schemas
   benchmarks.py    shallow suite and artifact writing
   comparison.py    optional PySR baseline comparison
+  campaigns.py     Phase 2 campaign suites
+  mutations.py     deterministic route mutations
+  scoring.py       exact-verifier candidate scoring
+  pruning.py       structural dedupe and beam pruning
+  agentic.py       local proposer/evaluator/pruner loop
   cli.py           argparse CLI
   app.py           Streamlit dashboard
 ```
 
 ## Phase 2 Backlog
 
-- LangGraph/AutoGen proposer-evaluator-pruner plugin
-- PySR comparison suite
+- reviewed execution plan: [docs/phase-2-plan.md](docs/phase-2-plan.md)
+- shipped: local proposer/evaluator/pruner orchestrator on top of the experiment
+  foundation
+- shipped: compare-suite aggregation across stable targets with optional PySR install
+  guidance
+- shipped: research-tier campaign suite with explicit failure reporting for `x^2`,
+  `x*y`, division, and `sin(x)`
+- next milestone: richer dashboard comparisons between gradient, agentic, and PySR
+  search
 - hosted demo
 - operator zoo search for EML cousins
-- hard targets: `x*y`, division, `x^2`, `sin(x)`

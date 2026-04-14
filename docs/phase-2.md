@@ -1,20 +1,23 @@
 # Phase 2 Backlog
 
+Detailed execution plan: [docs/phase-2-plan.md](/Users/owlxshri/Desktop/personal%20projects/paper_viz/docs/phase-2-plan.md)
+
 EML Lab v1 is intentionally small. These are the next research directions once the
 core optimizer, verifier, benchmark suite, and dashboard are stable.
 
 ## Multi-Agent Symbolic Orchestrator
 
-- Proposer suggests route mutations or depth expansions.
-- Evaluator runs the exact verifier and benchmark suite.
-- Pruner simplifies snapped trees and rejects numerically fragile candidates.
+- Initial local proposer/evaluator/pruner loop is now implemented.
+- Proposer suggests deterministic route mutations and optional depth expansions.
+- Evaluator runs the exact verifier and candidate score model.
+- Pruner deduplicates structurally equivalent trees and keeps the top beam.
 
 This should wrap the real EML engine. It should not replace it.
 
 ## External Benchmarks
 
 - PySR comparison command now exists as an optional baseline.
-- Next step: expand from single-target comparisons into a full suite with aggregated metrics.
+- Aggregated compare-suite execution now exists for stable compare-eligible targets.
 - Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo
@@ -25,9 +28,9 @@ This should wrap the real EML engine. It should not replace it.
 
 ## Hard Targets
 
-- `x*y`
-- `x/y`
-- `x^2`
-- `sin(x)`
+- Research-tier target specs now exist for `x*y`, `x/y`, `x^2`, and `sin(x)`.
+- `phase2-research` runs them as non-required training experiments.
+- Campaign artifacts now capture verifier output, target tier, expected depth, and
+  known failure modes for each hard target.
 
 These should be treated as research experiments, not v1 promises.
