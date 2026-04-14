@@ -12,6 +12,7 @@ from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.benchmarks import run_benchmark_suite
 from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
+    export_method_comparisons,
     find_method_comparisons,
     run_method_comparison,
     run_pysr_compare_suite,
@@ -103,6 +104,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="summarize saved cross-method comparison artifacts",
     )
     compare_report.add_argument("--root", type=Path, default=Path("runs"))
+
+    compare_export = subparsers.add_parser(
+        "compare-methods-export",
+        help="export filtered cross-method comparison analytics to JSON and CSV artifacts",
+    )
+    compare_export.add_argument("--root", type=Path, default=Path("runs"))
+    compare_export.add_argument("--output-dir", type=Path, default=Path("runs/exports"))
+    compare_export.add_argument("--target", action="append", default=None)
+    compare_export.add_argument("--status", action="append", default=None)
+    compare_export.add_argument("--seed", action="append", type=int, default=None)
+    compare_export.add_argument("--required-only", action="store_true")
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -202,6 +214,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "compare-methods-report":
         result = summarize_method_comparisons(args.root)
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
+    if args.command == "compare-methods-export":
+        result = export_method_comparisons(
+            args.root,
+            args.output_dir,
+            targets=args.target,
+            statuses=args.status,
+            seeds=args.seed,
+            required_only=args.required_only,
+        )
         print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0
     if args.command == "orchestrate":

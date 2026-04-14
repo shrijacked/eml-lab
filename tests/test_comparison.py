@@ -5,11 +5,14 @@ from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
     MethodComparisonAggregate,
+    MethodComparisonExportResult,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
     PySRStatus,
     aggregate_method_comparisons,
     detect_pysr_environment,
+    export_method_comparisons,
+    filter_method_comparisons,
     find_method_comparisons,
     load_method_comparison,
     run_method_comparison,
@@ -353,3 +356,62 @@ def test_aggregate_method_comparisons_can_summarize_filtered_subset(
     assert latest_row.seed_count == 2
     assert latest_row.best_gradient_max_mse == 0.0
     assert latest_row.best_agentic_max_mse == 0.0
+
+
+def test_filter_method_comparisons_can_filter_by_seed_and_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    run_method_comparison("exp", tmp_path, seed=0)
+    run_method_comparison("exp", tmp_path, seed=1)
+    run_method_comparison("ln", tmp_path, seed=0)
+
+    entries = find_method_comparisons(tmp_path)
+    filtered = filter_method_comparisons(entries, targets=["exp"], seeds=[1])
+
+    assert len(filtered) == 1
+    assert filtered[0].target == "exp"
+    assert filtered[0].seed == 1
+
+
+def test_export_method_comparisons_writes_filtered_bundle(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    run_method_comparison("exp", tmp_path, seed=0)
+    run_method_comparison("exp", tmp_path, seed=1)
+    run_method_comparison("ln", tmp_path, seed=0)
+
+    export = export_method_comparisons(
+        tmp_path,
+        tmp_path / "exports",
+        targets=["exp"],
+        seeds=[1],
+    )
+
+    assert isinstance(export, MethodComparisonExportResult)
+    assert export.run_count == 1
+    assert Path(export.summary_path).exists()
+    assert Path(export.runs_csv_path).exists()
+    assert Path(export.latest_csv_path).exists()
+    assert Path(export.manifest_path).exists()
+    summary = Path(export.summary_path).read_text(encoding="utf-8")
+    assert '"run_count": 1' in summary

@@ -41,6 +41,7 @@ python -m eml_lab campaign --suite phase2-research
 python -m eml_lab compare-methods --target ln
 python -m eml_lab compare-methods-history --root runs
 python -m eml_lab compare-methods-report --root runs
+python -m eml_lab compare-methods-export --root runs --output-dir runs/exports
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -133,6 +134,20 @@ success rate, PySR availability rate, and the latest expression each method foun
 The Compare tab now lets you filter those saved runs by target, status, and seed, then
 inspect artifact-backed charts for runs by target, runs by seed, success rate by target,
 and gradient vs. agentic error trends.
+
+Export filtered analytics:
+
+```bash
+python -m eml_lab compare-methods-export --root runs --output-dir runs/exports --target exp --seed 1
+```
+
+This writes a timestamped export bundle with:
+- `summary.json`
+- `runs.csv`
+- `latest_by_target.csv`
+- `manifest.json`
+
+The app can export the currently filtered saved-run view through the same package API.
 
 Run the first Phase 2 campaign suite:
 
@@ -237,6 +252,7 @@ src/eml_lab/
 - shipped: saved cross-method artifact discovery and reload in the dashboard and CLI
 - shipped: multi-run analytics for saved cross-method artifacts
 - shipped: artifact-backed charts and target/seed filtering on top of saved analytics
-- next milestone: richer charting and export for long-running research histories
+- shipped: JSON/CSV export bundles for filtered saved-run analytics
+- next milestone: richer charting and longer-horizon trend views for research histories
 - hosted demo
 - operator zoo search for EML cousins

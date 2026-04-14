@@ -100,6 +100,35 @@ def test_cli_compare_methods_report_smoke(tmp_path: Path) -> None:
     assert main(["compare-methods-report", "--root", str(output_dir)]) == 0
 
 
+def test_cli_compare_methods_export_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "compare-methods-export"
+    export_dir = tmp_path / "exports"
+
+    exit_code = main(["compare-methods", "--target", "exp", "--output-dir", str(output_dir)])
+
+    assert exit_code in {0, 3}
+    assert (
+        main(
+            [
+                "compare-methods-export",
+                "--root",
+                str(output_dir),
+                "--output-dir",
+                str(export_dir),
+                "--target",
+                "exp",
+            ]
+        )
+        == 0
+    )
+    export_roots = list(export_dir.glob("method-compare-export-*"))
+    assert len(export_roots) == 1
+    assert (export_roots[0] / "summary.json").exists()
+    assert (export_roots[0] / "runs.csv").exists()
+    assert (export_roots[0] / "latest_by_target.csv").exists()
+    assert (export_roots[0] / "manifest.json").exists()
+
+
 def test_cli_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign"
 

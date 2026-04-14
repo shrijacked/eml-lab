@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 import importlib.util
 import json
 import shutil
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -228,6 +229,21 @@ class MethodComparisonAggregate:
             "runs": [entry.to_dict() for entry in self.runs],
             "latest_by_target": [row.to_dict() for row in self.latest_by_target],
         }
+
+
+@dataclass(frozen=True)
+class MethodComparisonExportResult:
+    source_root: str
+    output_dir: str
+    manifest_path: str
+    summary_path: str
+    runs_csv_path: str
+    latest_csv_path: str
+    filters: dict[str, object]
+    run_count: int
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def detect_pysr_environment() -> PySRStatus:
@@ -495,6 +511,31 @@ def find_method_comparisons(root: str | Path = "runs") -> tuple[MethodComparison
     return tuple(entries)
 
 
+def filter_method_comparisons(
+    entries: Sequence[MethodComparisonIndexEntry],
+    *,
+    targets: Sequence[str] | None = None,
+    statuses: Sequence[str] | None = None,
+    seeds: Sequence[int] | None = None,
+    required_only: bool = False,
+) -> tuple[MethodComparisonIndexEntry, ...]:
+    target_set = set(targets or [])
+    status_set = set(statuses or [])
+    seed_set = set(seeds or [])
+    filtered: list[MethodComparisonIndexEntry] = []
+    for entry in entries:
+        if target_set and entry.target not in target_set:
+            continue
+        if status_set and entry.status not in status_set:
+            continue
+        if seed_set and entry.seed not in seed_set:
+            continue
+        if required_only and not entry.required_success:
+            continue
+        filtered.append(entry)
+    return tuple(filtered)
+
+
 def aggregate_method_comparisons(
     entries: Sequence[MethodComparisonIndexEntry],
     *,
@@ -569,6 +610,90 @@ def aggregate_method_comparisons(
 
 def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonAggregate:
     return aggregate_method_comparisons(find_method_comparisons(root), root=root)
+
+
+def export_method_comparisons(
+    root: str | Path = "runs",
+    output_dir: str | Path = "runs/exports",
+    *,
+    targets: Sequence[str] | None = None,
+    statuses: Sequence[str] | None = None,
+    seeds: Sequence[int] | None = None,
+    required_only: bool = False,
+) -> MethodComparisonExportResult:
+    entries = find_method_comparisons(root)
+    filtered = filter_method_comparisons(
+        entries,
+        targets=targets,
+        statuses=statuses,
+        seeds=seeds,
+        required_only=required_only,
+    )
+    filters = {
+        "targets": list(targets or []),
+        "statuses": list(statuses or []),
+        "seeds": list(seeds or []),
+        "required_only": required_only,
+    }
+    return write_method_comparison_export(
+        filtered,
+        output_dir,
+        root=root,
+        filters=filters,
+    )
+
+
+def write_method_comparison_export(
+    entries: Sequence[MethodComparisonIndexEntry],
+    output_dir: str | Path,
+    *,
+    root: str | Path = "runs",
+    filters: Mapping[str, object] | None = None,
+) -> MethodComparisonExportResult:
+    timestamp = _timestamp_slug()
+    export_root = Path(output_dir) / f"method-compare-export-{timestamp}"
+    export_root.mkdir(parents=True, exist_ok=True)
+
+    report = aggregate_method_comparisons(entries, root=root)
+    summary_path = export_root / "summary.json"
+    runs_csv_path = export_root / "runs.csv"
+    latest_csv_path = export_root / "latest_by_target.csv"
+    filters_payload = dict(filters or {})
+
+    summary_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    _write_csv(
+        runs_csv_path,
+        [entry.to_dict() for entry in report.runs],
+    )
+    _write_csv(
+        latest_csv_path,
+        [row.to_dict() for row in report.latest_by_target],
+    )
+    manifest = write_artifact_manifest(
+        export_root,
+        files=[
+            ArtifactFile(label="summary", path=str(summary_path), kind="json"),
+            ArtifactFile(label="runs-csv", path=str(runs_csv_path), kind="csv"),
+            ArtifactFile(label="latest-by-target-csv", path=str(latest_csv_path), kind="csv"),
+        ],
+        metadata={
+            "kind": "method-comparison-export",
+            "source_root": str(Path(root)),
+            "run_count": report.run_count,
+            "target_count": report.target_count,
+            "filters": filters_payload,
+        },
+    )
+    return MethodComparisonExportResult(
+        source_root=str(Path(root)),
+        output_dir=str(export_root),
+        manifest_path=manifest.manifest_path,
+        summary_path=str(summary_path),
+        runs_csv_path=str(runs_csv_path),
+        latest_csv_path=str(latest_csv_path),
+        filters=filters_payload,
+        run_count=report.run_count,
+    )
 
 
 def _run_available_pysr(
@@ -656,6 +781,17 @@ def _run_available_pysr(
         "equations": equations_records,
         "output_directory": str(model_output),
     }
+
+
+def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames = list(rows[0].keys())
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _default_train_steps(spec: TargetSpec) -> int:
