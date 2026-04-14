@@ -11,6 +11,7 @@ from pathlib import Path
 
 import torch
 
+from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
 from eml_lab.targets import TargetSpec, get_target, list_targets, sample_inputs
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
@@ -118,6 +119,50 @@ class ComparisonSuiteResult:
         }
 
 
+@dataclass(frozen=True)
+class MethodComparisonResult:
+    target: str
+    output_dir: str
+    manifest_path: str
+    pysr_status: PySRStatus
+    gradient: dict[str, object]
+    agentic: dict[str, object]
+    pysr: dict[str, object]
+
+    @property
+    def available(self) -> bool:
+        return self.pysr_status.available
+
+    @property
+    def status(self) -> str:
+        return str(self.pysr.get("status", "ok"))
+
+    @property
+    def required_success(self) -> bool:
+        return bool(self.gradient.get("success", False)) and bool(
+            self.agentic.get("success", False)
+        )
+
+    @property
+    def success(self) -> bool:
+        return self.required_success and self.status in {"ok", "unavailable"}
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "target": self.target,
+            "output_dir": self.output_dir,
+            "manifest_path": self.manifest_path,
+            "available": self.available,
+            "required_success": self.required_success,
+            "success": self.success,
+            "status": self.status,
+            "pysr_status": self.pysr_status.to_dict(),
+            "gradient": self.gradient,
+            "agentic": self.agentic,
+            "pysr": self.pysr,
+        }
+
+
 def detect_pysr_environment() -> PySRStatus:
     pysr_installed = importlib.util.find_spec("pysr") is not None
     julia_path = shutil.which("julia")
@@ -161,21 +206,7 @@ def run_pysr_comparison(
     root = Path(output_dir) / f"compare-{spec.name}"
     root.mkdir(parents=True, exist_ok=True)
 
-    eml_result = train_target(
-        TrainConfig(
-            target=spec.name,
-            depth=spec.default_depth,
-            seed=seed,
-            steps=180 if spec.name == "ln" else 120,
-        )
-    )
-    eml_dir = root / "eml"
-    eml_manifest = write_train_artifacts(eml_result, eml_dir)
-    eml_summary = {
-        **eml_result.to_metrics_dict(),
-        "output_dir": str(eml_dir),
-        "manifest_path": eml_manifest.manifest_path,
-    }
+    eml_summary = _run_gradient_baseline(spec, root / "eml", seed=seed)
 
     status = detect_pysr_environment()
     pysr_summary: dict[str, object]
@@ -190,6 +221,62 @@ def run_pysr_comparison(
 
     pysr_summary = _run_available_pysr(spec, root, points, niterations, maxsize, seed)
     return _finalize_comparison(spec.name, root, status, eml_summary, pysr_summary)
+
+
+def run_method_comparison(
+    target: str = "ln",
+    output_dir: str | Path = "runs",
+    *,
+    train_steps: int | None = None,
+    budget: int | None = None,
+    beam_width: int = 6,
+    seed_count: int = 4,
+    max_depth: int | None = None,
+    points: int = 128,
+    niterations: int = 40,
+    maxsize: int = 20,
+    seed: int = 0,
+) -> MethodComparisonResult:
+    spec = get_target(target)
+    if spec.known_route is None:
+        raise ValueError(
+            f"Target {spec.name!r} has no known route; cross-method comparison requires "
+            "an orchestratable target."
+        )
+
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    root = Path(output_dir) / f"method-compare-{spec.name}-{timestamp}"
+    root.mkdir(parents=True, exist_ok=True)
+
+    gradient_summary = _run_gradient_baseline(spec, root / "gradient", seed=seed, steps=train_steps)
+    agentic_summary = _run_agentic_baseline(
+        spec,
+        root / "agentic",
+        seed=seed,
+        budget=budget,
+        beam_width=beam_width,
+        seed_count=seed_count,
+        max_depth=max_depth,
+    )
+
+    status = detect_pysr_environment()
+    if not status.available:
+        pysr_summary = {
+            "status": "unavailable",
+            "reason": status.reason,
+            "install_hint": status.install_hint,
+        }
+    else:
+        pysr_summary = _run_available_pysr(spec, root, points, niterations, maxsize, seed)
+
+    return _finalize_method_comparison(
+        spec.name,
+        root,
+        status,
+        gradient_summary,
+        agentic_summary,
+        pysr_summary,
+    )
 
 
 def run_pysr_compare_suite(
@@ -364,6 +451,76 @@ def _run_available_pysr(
     }
 
 
+def _default_train_steps(spec: TargetSpec) -> int:
+    return 180 if spec.name == "ln" else 120
+
+
+def _default_orchestrator_budget(spec: TargetSpec) -> int:
+    return 12 if spec.default_depth <= 1 else 24
+
+
+def _run_gradient_baseline(
+    spec: TargetSpec,
+    root: Path,
+    *,
+    seed: int,
+    steps: int | None = None,
+) -> dict[str, object]:
+    result = train_target(
+        TrainConfig(
+            target=spec.name,
+            depth=spec.default_depth,
+            seed=seed,
+            steps=steps or _default_train_steps(spec),
+        )
+    )
+    manifest = write_train_artifacts(result, root)
+    return {
+        "status": "ok" if result.success else "failed",
+        **result.to_metrics_dict(),
+        "output_dir": str(root),
+        "manifest_path": manifest.manifest_path,
+    }
+
+
+def _run_agentic_baseline(
+    spec: TargetSpec,
+    root: Path,
+    *,
+    seed: int,
+    budget: int | None = None,
+    beam_width: int = 6,
+    seed_count: int = 4,
+    max_depth: int | None = None,
+) -> dict[str, object]:
+    result = run_orchestrator(
+        OrchestratorConfig(
+            target=spec.name,
+            budget=budget or _default_orchestrator_budget(spec),
+            beam_width=beam_width,
+            seed_count=seed_count,
+            seed=seed,
+            max_depth=max_depth,
+        ),
+        root,
+    )
+    return {
+        "status": "ok" if result.success else "failed",
+        "success": result.success,
+        "best_rpn": result.best_rpn,
+        "initial_best_rpn": result.initial_best_rpn,
+        "best_score": result.best_score,
+        "max_mse": result.best_score["max_mse"],
+        "evaluated_candidates": result.evaluated_candidates,
+        "generations": result.generations,
+        "output_dir": result.output_dir,
+        "manifest_path": result.manifest_path,
+        "summary_path": result.summary_path,
+        "leaderboard_path": result.leaderboard_path,
+        "events_path": result.events_path,
+    }
+
+
 def _write_comparison_summary(result: ComparisonResult, root: Path) -> None:
     (root / "summary.json").write_text(
         json.dumps(result.to_dict(), indent=2, default=str),
@@ -414,4 +571,90 @@ def _finalize_comparison(
         pysr=pysr_summary,
     )
     _write_comparison_summary(result, root)
+    return result
+
+
+def _write_method_comparison_summary(result: MethodComparisonResult, root: Path) -> None:
+    (root / "summary.json").write_text(
+        json.dumps(result.to_dict(), indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+def _finalize_method_comparison(
+    target: str,
+    root: Path,
+    status: PySRStatus,
+    gradient_summary: dict[str, object],
+    agentic_summary: dict[str, object],
+    pysr_summary: dict[str, object],
+) -> MethodComparisonResult:
+    summary_path = root / "summary.json"
+    files = [
+        ArtifactFile(label="summary", path=str(summary_path), kind="json"),
+        ArtifactFile(
+            label="gradient-root",
+            path=str(gradient_summary["output_dir"]),
+            kind="directory",
+        ),
+        ArtifactFile(
+            label="gradient-manifest",
+            path=str(gradient_summary["manifest_path"]),
+            kind="json",
+        ),
+        ArtifactFile(
+            label="agentic-root",
+            path=str(agentic_summary["output_dir"]),
+            kind="directory",
+        ),
+        ArtifactFile(
+            label="agentic-manifest",
+            path=str(agentic_summary["manifest_path"]),
+            kind="json",
+        ),
+        ArtifactFile(
+            label="agentic-events",
+            path=str(agentic_summary["events_path"]),
+            kind="jsonl",
+        ),
+        ArtifactFile(
+            label="agentic-leaderboard",
+            path=str(agentic_summary["leaderboard_path"]),
+            kind="json",
+        ),
+    ]
+    if "output_directory" in pysr_summary:
+        files.append(
+            ArtifactFile(
+                label="pysr-root",
+                path=str(pysr_summary["output_directory"]),
+                kind="directory",
+            )
+        )
+        equations_path = Path(str(pysr_summary["output_directory"])) / "equations.csv"
+        if equations_path.exists():
+            files.append(ArtifactFile(label="pysr-equations", path=str(equations_path), kind="csv"))
+
+    manifest = write_artifact_manifest(
+        root,
+        files=files,
+        metadata={
+            "kind": "method-comparison",
+            "target": target,
+            "pysr_available": status.available,
+            "pysr_status": pysr_summary.get("status"),
+            "required_success": bool(gradient_summary.get("success"))
+            and bool(agentic_summary.get("success")),
+        },
+    )
+    result = MethodComparisonResult(
+        target=target,
+        output_dir=str(root),
+        manifest_path=manifest.manifest_path,
+        pysr_status=status,
+        gradient=gradient_summary,
+        agentic=agentic_summary,
+        pysr=pysr_summary,
+    )
+    _write_method_comparison_summary(result, root)
     return result

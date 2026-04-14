@@ -38,6 +38,7 @@ python -m eml_lab train --target ln --depth 3 --seed 0
 python -m eml_lab bench --suite shallow
 python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
+python -m eml_lab compare-methods --target ln
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -97,6 +98,16 @@ python -m eml_lab compare-suite --suite shallow --output-dir runs
 This executes the optional baseline over all stable compare-eligible targets and writes
 an aggregate summary plus per-target manifests. If PySR or Julia is missing, the suite
 still writes the EML baselines and install guidance, then exits with code `3`.
+
+Run the cross-method comparison on one target:
+
+```bash
+python -m eml_lab compare-methods --target ln --output-dir runs
+```
+
+This lines up the gradient baseline, the local agentic route search, and the optional
+PySR baseline in one artifact bundle so you can compare snapped RPNs, verifier error,
+and PySR availability from one summary file.
 
 Run the first Phase 2 campaign suite:
 
@@ -196,7 +207,8 @@ src/eml_lab/
   guidance
 - shipped: research-tier campaign suite with explicit failure reporting for `x^2`,
   `x*y`, division, and `sin(x)`
-- next milestone: richer dashboard comparisons between gradient, agentic, and PySR
+- shipped: cross-method comparison runs for gradient, agentic, and optional PySR
   search
+- next milestone: richer dashboard analysis on top of saved cross-method artifacts
 - hosted demo
 - operator zoo search for EML cousins

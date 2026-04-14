@@ -13,7 +13,9 @@ from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
+    MethodComparisonResult,
     detect_pysr_environment,
+    run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
 )
@@ -38,6 +40,14 @@ def _read_jsonl(path: str | Path) -> list[dict[str, object]]:
             continue
         rows.append(json.loads(line))
     return rows
+
+
+def _method_compare_targets() -> list[str]:
+    return [
+        name
+        for name in list_targets(comparison_eligible=True)
+        if get_target(name).known_route is not None
+    ]
 
 
 def _comparison_rows(result: ComparisonResult) -> list[dict[str, object]]:
@@ -72,6 +82,32 @@ def _comparison_suite_rows(result: ComparisonSuiteResult) -> list[dict[str, obje
             }
         )
     return rows
+
+
+def _method_comparison_rows(result: MethodComparisonResult) -> list[dict[str, object]]:
+    return [
+        {
+            "method": "gradient",
+            "status": result.gradient.get("status"),
+            "expression": result.gradient.get("rpn"),
+            "max_mse": result.gradient.get("verification", {}).get("max_mse"),
+            "notes": result.gradient.get("verification", {}).get("failure_reason"),
+        },
+        {
+            "method": "agentic",
+            "status": result.agentic.get("status"),
+            "expression": result.agentic.get("best_rpn"),
+            "max_mse": result.agentic.get("max_mse"),
+            "notes": result.agentic.get("best_score", {}).get("failure_reason"),
+        },
+        {
+            "method": "pysr",
+            "status": result.pysr.get("status"),
+            "expression": result.pysr.get("best_equation"),
+            "max_mse": None,
+            "notes": result.pysr.get("reason", result.pysr.get("install_hint")),
+        },
+    ]
 
 
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
@@ -199,20 +235,45 @@ def main() -> None:
             index=list_targets(comparison_eligible=True).index("ln"),
             key="compare_target",
         )
+        method_compare_target = st.selectbox(
+            "Cross-method target",
+            _method_compare_targets(),
+            index=_method_compare_targets().index("ln") if "ln" in _method_compare_targets() else 0,
+            key="method_compare_target",
+        )
         if st.button("Run comparison", key="run_single_compare"):
             comparison = run_pysr_comparison(compare_target)
             st.session_state["last_comparison"] = comparison
         if st.button("Run compare suite", key="run_compare_suite"):
             compare_suite = run_pysr_compare_suite("shallow")
             st.session_state["last_compare_suite"] = compare_suite
+        if st.button("Run cross-method comparison", key="run_method_compare"):
+            method_comparison = run_method_comparison(method_compare_target)
+            st.session_state["last_method_comparison"] = method_comparison
         comparison = st.session_state.get("last_comparison")
         compare_suite = st.session_state.get("last_compare_suite")
+        method_comparison = st.session_state.get("last_method_comparison")
         if comparison is None:
             st.info("Run a comparison to capture the EML baseline and optional PySR result.")
         else:
             st.subheader("Single target result")
             st.dataframe(_comparison_rows(comparison), use_container_width=True)
             st.json(comparison.to_dict())
+        if method_comparison is None:
+            st.info(
+                "Run the cross-method comparison to line up gradient, agentic, and PySR "
+                "results on one target."
+            )
+        else:
+            st.subheader("Cross-method comparison")
+            st.metric(
+                "Required methods",
+                "passed" if method_comparison.required_success else "failed",
+            )
+            st.metric("PySR status", method_comparison.status)
+            st.write(f"Artifacts: `{method_comparison.output_dir}`")
+            st.dataframe(_method_comparison_rows(method_comparison), use_container_width=True)
+            st.json(method_comparison.to_dict())
         if compare_suite is None:
             st.info(
                 "Run the compare suite to aggregate PySR baseline results across stable targets."

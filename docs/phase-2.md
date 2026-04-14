@@ -18,6 +18,8 @@ This should wrap the real EML engine. It should not replace it.
 
 - PySR comparison command now exists as an optional baseline.
 - Aggregated compare-suite execution now exists for stable compare-eligible targets.
+- Cross-method comparison now exists for one target at a time, lining up gradient,
+  agentic, and optional PySR results in one summary artifact.
 - Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo

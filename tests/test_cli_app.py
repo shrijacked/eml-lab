@@ -70,6 +70,18 @@ def test_cli_compare_suite_smoke(tmp_path: Path) -> None:
     assert (suite_roots[0] / "manifest.json").exists()
 
 
+def test_cli_compare_methods_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "compare-methods"
+
+    exit_code = main(["compare-methods", "--target", "exp", "--output-dir", str(output_dir)])
+
+    assert exit_code in {0, 3}
+    roots = list(output_dir.glob("method-compare-exp-*"))
+    assert len(roots) == 1
+    assert (roots[0] / "summary.json").exists()
+    assert (roots[0] / "manifest.json").exists()
+
+
 def test_cli_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign"
 

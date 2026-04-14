@@ -11,13 +11,25 @@ from pathlib import Path
 from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.benchmarks import run_benchmark_suite
 from eml_lab.campaigns import list_campaigns, run_campaign
-from eml_lab.comparison import run_pysr_compare_suite, run_pysr_comparison
+from eml_lab.comparison import (
+    run_method_comparison,
+    run_pysr_compare_suite,
+    run_pysr_comparison,
+)
 from eml_lab.targets import get_target, list_targets
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
 
 
 def _orchestratable_targets() -> list[str]:
     return [name for name in list_targets() if get_target(name).known_route is not None]
+
+
+def _method_compare_targets() -> list[str]:
+    return [
+        name
+        for name in list_targets(comparison_eligible=True)
+        if get_target(name).known_route is not None
+    ]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,6 +73,22 @@ def build_parser() -> argparse.ArgumentParser:
     compare_suite.add_argument("--niterations", type=int, default=40)
     compare_suite.add_argument("--maxsize", type=int, default=20)
     compare_suite.add_argument("--seed", type=int, default=0)
+
+    compare_methods = subparsers.add_parser(
+        "compare-methods",
+        help="run gradient, agentic, and optional PySR search on one target",
+    )
+    compare_methods.add_argument("--target", choices=_method_compare_targets(), default="ln")
+    compare_methods.add_argument("--output-dir", type=Path, default=Path("runs"))
+    compare_methods.add_argument("--train-steps", type=int, default=None)
+    compare_methods.add_argument("--budget", type=int, default=None)
+    compare_methods.add_argument("--beam-width", type=int, default=6)
+    compare_methods.add_argument("--seed-count", type=int, default=4)
+    compare_methods.add_argument("--max-depth", type=int, default=None)
+    compare_methods.add_argument("--points", type=int, default=128)
+    compare_methods.add_argument("--niterations", type=int, default=40)
+    compare_methods.add_argument("--maxsize", type=int, default=20)
+    compare_methods.add_argument("--seed", type=int, default=0)
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -136,6 +164,24 @@ def main(argv: list[str] | None = None) -> int:
         if result.available:
             return 0 if result.pysr_success_rate == 1.0 else 2
         return 3
+    if args.command == "compare-methods":
+        result = run_method_comparison(
+            target=args.target,
+            output_dir=args.output_dir,
+            train_steps=args.train_steps,
+            budget=args.budget,
+            beam_width=args.beam_width,
+            seed_count=args.seed_count,
+            max_depth=args.max_depth,
+            points=args.points,
+            niterations=args.niterations,
+            maxsize=args.maxsize,
+            seed=args.seed,
+        )
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        if result.success:
+            return 0 if result.available else 3
+        return 2
     if args.command == "orchestrate":
         result = run_orchestrator(
             OrchestratorConfig(
