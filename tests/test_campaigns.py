@@ -6,6 +6,7 @@ from eml_lab.campaigns import CampaignResult, list_campaigns, run_campaign
 def test_list_campaigns_includes_phase2_foundation() -> None:
     assert "phase2-foundation" in list_campaigns()
     assert "phase2-agentic" in list_campaigns()
+    assert "phase2-operator-zoo" in list_campaigns()
 
 
 def test_run_campaign_writes_summary_and_manifest(tmp_path: Path) -> None:
@@ -45,3 +46,14 @@ def test_run_research_campaign_reports_failure_metadata(tmp_path: Path) -> None:
         or run.metrics["failure_reason"] is not None
         for run in failed
     )
+
+
+def test_run_operator_zoo_campaign_writes_artifacts(tmp_path: Path) -> None:
+    result = run_campaign("phase2-operator-zoo", tmp_path)
+
+    assert result.success
+    zoo_runs = [run for run in result.runs if run.kind == "operator_zoo"]
+    assert len(zoo_runs) == 1
+    assert Path(zoo_runs[0].summary_path).exists()
+    assert Path(zoo_runs[0].manifest_path).exists()
+    assert zoo_runs[0].metrics["best"] is not None

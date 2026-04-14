@@ -13,10 +13,11 @@ from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
 from eml_lab.benchmarks import run_benchmark_suite
 from eml_lab.comparison import run_pysr_comparison
 from eml_lab.experiments import ExperimentRecord
+from eml_lab.operator_zoo import OperatorZooConfig, run_operator_zoo
 from eml_lab.targets import get_target
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
 
-CampaignStepKind = Literal["benchmark", "comparison", "orchestration", "train"]
+CampaignStepKind = Literal["benchmark", "comparison", "operator_zoo", "orchestration", "train"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,8 @@ class CampaignStep:
     steps: int | None = None
     snap_strategy: str | None = None
     init_strategy: str | None = None
+    grid_points: int | None = None
+    epsilon: float | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +159,18 @@ CAMPAIGNS: dict[str, CampaignSpec] = {
             ),
         ),
     ),
+    "phase2-operator-zoo": CampaignSpec(
+        name="phase2-operator-zoo",
+        description="Numerical research suite for EML-like operator variants.",
+        steps=(
+            CampaignStep(
+                name="operator-zoo",
+                kind="operator_zoo",
+                grid_points=17,
+                epsilon=1e-8,
+            ),
+        ),
+    ),
 }
 
 
@@ -254,6 +269,26 @@ def run_campaign(
                 summary_path=str(step_root / "metrics.json"),
                 manifest_path=manifest.manifest_path,
                 metrics=metrics,
+            )
+        elif step.kind == "operator_zoo":
+            step_root = root / f"{index:02d}-operator-zoo"
+            result = run_operator_zoo(
+                step_root,
+                OperatorZooConfig(
+                    grid_points=step.grid_points or 17,
+                    epsilon=step.epsilon or 1e-8,
+                ),
+            )
+            record = ExperimentRecord(
+                name=step.name,
+                kind="operator_zoo",
+                status="ok",
+                success=True,
+                required=step.required,
+                output_dir=result.output_dir,
+                summary_path=result.summary_path,
+                manifest_path=result.manifest_path,
+                metrics=result.to_dict(),
             )
         else:
             if step.target is None:

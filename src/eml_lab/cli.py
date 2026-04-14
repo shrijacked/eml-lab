@@ -22,6 +22,7 @@ from eml_lab.comparison import (
     snapshot_method_comparisons,
     summarize_method_comparisons,
 )
+from eml_lab.operator_zoo import OperatorZooConfig, run_operator_zoo
 from eml_lab.targets import get_target, list_targets
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
 
@@ -158,6 +159,16 @@ def build_parser() -> argparse.ArgumentParser:
     orchestrate.add_argument("--seed", type=int, default=0)
     orchestrate.add_argument("--max-depth", type=int, default=None)
 
+    operator_zoo = subparsers.add_parser(
+        "operator-zoo",
+        help="benchmark EML-like operator variants on a deterministic numerical stress grid",
+    )
+    operator_zoo.add_argument("--output-dir", type=Path, default=Path("runs"))
+    operator_zoo.add_argument("--grid-points", type=int, default=17)
+    operator_zoo.add_argument("--epsilon", type=float, default=1e-8)
+    operator_zoo.add_argument("--real-span", type=float, default=3.0)
+    operator_zoo.add_argument("--imag-span", type=float, default=1.5)
+
     app = subparsers.add_parser("app", help="launch the local Streamlit app")
     app.add_argument(
         "--dry-run", action="store_true", help="print the command without starting Streamlit"
@@ -291,6 +302,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0 if result.success else 2
+    if args.command == "operator-zoo":
+        result = run_operator_zoo(
+            args.output_dir,
+            OperatorZooConfig(
+                grid_points=args.grid_points,
+                epsilon=args.epsilon,
+                real_span=args.real_span,
+                imag_span=args.imag_span,
+            ),
+        )
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
     if args.command == "app":
         app_path = Path(__file__).with_name("app.py")
         command = [sys.executable, "-m", "streamlit", "run", str(app_path)]

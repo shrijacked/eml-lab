@@ -40,6 +40,14 @@ from eml_lab.comparison import (
     write_method_comparison_snapshot_history_report,
 )
 from eml_lab.experiments import ExperimentRecord
+from eml_lab.operator_zoo import (
+    OperatorZooCandidate,
+    OperatorZooConfig,
+    OperatorZooEntry,
+    OperatorZooResult,
+    candidate_registry,
+    run_operator_zoo,
+)
 from eml_lab.operators import StabilityConfig, StabilityStats, eml_exact, eml_train
 from eml_lab.soft_tree import SoftEMLTree, snap_tree
 from eml_lab.targets import TargetSpec, get_target, list_targets
@@ -57,6 +65,11 @@ __all__ = [
     "ComparisonSuiteEntry",
     "ComparisonSuiteResult",
     "ExperimentRecord",
+    "OperatorZooCandidate",
+    "OperatorZooConfig",
+    "OperatorZooEntry",
+    "OperatorZooResult",
+    "candidate_registry",
     "export_method_comparisons",
     "filter_method_comparisons",
     "MethodComparisonAggregate",
@@ -96,6 +109,7 @@ __all__ = [
     "run_campaign",
     "run_method_comparison",
     "run_benchmark_suite",
+    "run_operator_zoo",
     "run_pysr_compare_suite",
     "run_pysr_comparison",
     "snap_tree",

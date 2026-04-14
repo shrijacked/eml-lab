@@ -30,9 +30,11 @@ This should wrap the real EML engine. It should not replace it.
 
 ## Operator Zoo
 
-- Search for EML cousins with better numerical behavior.
-- Track whether candidates need a distinguished constant.
-- Produce a small report per candidate.
+- Operator zoo benchmark/report now exists for EML-like numerical variants.
+- It tracks finite output rate, safe-domain finite rate, gradient finite rate, exact-operator error, and stability score.
+- It keeps the faithful paper operator explicitly marked as the exact reference.
+- Stabilized variants are treated as training/research candidates, not verifier replacements.
+- `phase2-operator-zoo` runs the zoo as a repeatable campaign artifact.
 
 ## Hard Targets
 

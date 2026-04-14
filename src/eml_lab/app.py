@@ -33,6 +33,7 @@ from eml_lab.comparison import (
     summarize_method_comparisons,
 )
 from eml_lab.mutations import route_to_tree
+from eml_lab.operator_zoo import OperatorZooConfig, OperatorZooResult, run_operator_zoo
 from eml_lab.targets import PAPER_FIXTURES, get_target, list_targets
 from eml_lab.training import TrainConfig, train_target
 from eml_lab.trees import rpn_string
@@ -243,6 +244,23 @@ def _snapshot_run_count_chart(history: MethodComparisonSnapshotHistory) -> dict[
     return {"run_count": [entry.run_count for entry in ordered]}
 
 
+def _operator_zoo_rows(result: OperatorZooResult) -> list[dict[str, object]]:
+    return [
+        {
+            "rank": entry.rank,
+            "name": entry.candidate.name,
+            "expression": entry.candidate.expression,
+            "exact_paper_operator": entry.candidate.exact_paper_operator,
+            "finite_rate": entry.finite_rate,
+            "safe_finite_rate": entry.safe_finite_rate,
+            "gradient_finite_rate": entry.gradient_finite_rate,
+            "mse_to_exact": entry.mse_to_exact,
+            "stability_score": entry.stability_score,
+        }
+        for entry in result.entries
+    ]
+
+
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for index, entry in enumerate(result.leaderboard, start=1):
@@ -289,8 +307,26 @@ def main() -> None:
     st.title("EML Lab")
     st.caption("Differentiable formula discovery with one complex-valued binary operator.")
 
-    train_tab, snap_tab, bench_tab, compare_tab, orchestrate_tab, campaign_tab, paper_tab = st.tabs(
-        ["Train", "Snap", "Bench", "Compare", "Orchestrate", "Campaigns", "Paper Explorer"]
+    (
+        train_tab,
+        snap_tab,
+        bench_tab,
+        compare_tab,
+        orchestrate_tab,
+        campaign_tab,
+        operator_zoo_tab,
+        paper_tab,
+    ) = st.tabs(
+        [
+            "Train",
+            "Snap",
+            "Bench",
+            "Compare",
+            "Orchestrate",
+            "Campaigns",
+            "Operator Zoo",
+            "Paper Explorer",
+        ]
     )
 
     with train_tab:
@@ -699,6 +735,55 @@ def main() -> None:
             st.write(f"Artifacts: `{campaign_result.output_dir}`")
             st.dataframe(_campaign_rows(campaign_result), use_container_width=True)
             st.json(campaign_result.to_dict())
+
+    with operator_zoo_tab:
+        st.write(
+            "Numerical research harness for EML-like operator variants. Exact verification "
+            "still uses the faithful paper operator."
+        )
+        grid_points = st.slider("Stress grid points", min_value=5, max_value=41, value=17, step=2)
+        epsilon = st.number_input(
+            "Epsilon",
+            min_value=1e-12,
+            max_value=1e-2,
+            value=1e-8,
+            format="%.1e",
+        )
+        real_span = st.number_input("Real span", min_value=0.5, max_value=8.0, value=3.0)
+        imag_span = st.number_input("Imag span", min_value=0.5, max_value=8.0, value=1.5)
+        output_root = st.text_input(
+            "Operator zoo output root",
+            value="runs",
+            key="operator_zoo_output_root",
+        )
+        if st.button("Run operator zoo", key="run_operator_zoo"):
+            st.session_state["last_operator_zoo"] = run_operator_zoo(
+                output_root,
+                OperatorZooConfig(
+                    grid_points=int(grid_points),
+                    epsilon=float(epsilon),
+                    real_span=float(real_span),
+                    imag_span=float(imag_span),
+                ),
+            )
+        operator_zoo_result = st.session_state.get("last_operator_zoo")
+        if operator_zoo_result is None:
+            st.info("Run the operator zoo to compare finite rates and gradient behavior.")
+        else:
+            best = operator_zoo_result.best
+            if best is not None:
+                st.metric("Best candidate", best.candidate.name)
+                st.metric("Best stability score", f"{best.stability_score:.3f}")
+            st.write(f"Artifacts: `{operator_zoo_result.output_dir}`")
+            st.dataframe(_operator_zoo_rows(operator_zoo_result), use_container_width=True)
+            plot_path = Path(operator_zoo_result.plot_path)
+            if plot_path.exists():
+                st.image(str(plot_path))
+            report_path = Path(operator_zoo_result.report_path)
+            if report_path.exists():
+                with st.expander("Operator zoo report preview"):
+                    st.markdown(report_path.read_text(encoding="utf-8"))
+            st.json(operator_zoo_result.to_dict())
 
     with paper_tab:
         fixture_name = st.selectbox("Known EML tree", list(PAPER_FIXTURES))

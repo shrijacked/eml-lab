@@ -38,6 +38,7 @@ python -m eml_lab train --target ln --depth 3 --seed 0
 python -m eml_lab bench --suite shallow
 python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
+python -m eml_lab campaign --suite phase2-operator-zoo
 python -m eml_lab compare-methods --target ln
 python -m eml_lab compare-methods-history --root runs
 python -m eml_lab compare-methods-report --root runs
@@ -45,6 +46,7 @@ python -m eml_lab compare-methods-export --root runs --output-dir runs/exports
 python -m eml_lab compare-methods-snapshot --root runs --output-dir runs/snapshots
 python -m eml_lab compare-methods-snapshot-history --root runs/snapshots
 python -m eml_lab compare-methods-snapshot-report --root runs/snapshots --output-dir runs/snapshot-reports
+python -m eml_lab operator-zoo --output-dir runs
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -195,6 +197,30 @@ longer-horizon bundle with:
 The Compare tab can scan saved snapshots, show success/run-count trends, and build this
 history report from the same package API.
 
+Run the operator zoo:
+
+```bash
+python -m eml_lab operator-zoo --output-dir runs --grid-points 17
+```
+
+This benchmark compares EML-like operator variants on a deterministic complex stress
+grid and writes:
+- `summary.json`
+- `candidates.csv`
+- `report.md`
+- `stability_scores.png`
+- `manifest.json`
+
+The faithful `exp(x) - log(y)` operator stays marked as the exact paper reference.
+Stabilized variants are reported as research candidates for future training heuristics,
+not as proof operators.
+
+The same check is available as a campaign suite:
+
+```bash
+python -m eml_lab campaign --suite phase2-operator-zoo --output-dir runs
+```
+
 Run the first Phase 2 campaign suite:
 
 ```bash
@@ -280,6 +306,7 @@ src/eml_lab/
   scoring.py       exact-verifier candidate scoring
   pruning.py       structural dedupe and beam pruning
   agentic.py       local proposer/evaluator/pruner loop
+  operator_zoo.py  numerical research harness for EML-like variants
   cli.py           argparse CLI
   app.py           Streamlit dashboard
 ```
@@ -301,6 +328,7 @@ src/eml_lab/
 - shipped: JSON/CSV export bundles for filtered saved-run analytics
 - shipped: report-grade snapshot bundles with markdown summaries and plot images
 - shipped: longer-horizon snapshot history reports over saved research snapshots
-- next milestone: richer per-target research reports and operator zoo experiments
+- shipped: operator zoo benchmark/report for EML-like numerical variants
+- shipped: operator zoo campaign suite
+- next milestone: richer per-target research reports and hosted demo packaging
 - hosted demo
-- operator zoo search for EML cousins

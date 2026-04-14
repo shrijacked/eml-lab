@@ -261,3 +261,27 @@ def test_cli_orchestrate_smoke(tmp_path: Path) -> None:
     assert (orchestrate_roots[0] / "summary.json").exists()
     assert (orchestrate_roots[0] / "manifest.json").exists()
     assert (orchestrate_roots[0] / "events.jsonl").exists()
+
+
+def test_cli_operator_zoo_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "operator-zoo"
+
+    assert (
+        main(
+            [
+                "operator-zoo",
+                "--output-dir",
+                str(output_dir),
+                "--grid-points",
+                "5",
+            ]
+        )
+        == 0
+    )
+    roots = list(output_dir.glob("operator-zoo-*"))
+    assert len(roots) == 1
+    assert (roots[0] / "summary.json").exists()
+    assert (roots[0] / "candidates.csv").exists()
+    assert (roots[0] / "report.md").exists()
+    assert (roots[0] / "stability_scores.png").exists()
+    assert (roots[0] / "manifest.json").exists()

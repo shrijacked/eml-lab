@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-ExperimentKind = Literal["train", "benchmark", "comparison", "campaign", "orchestration"]
+ExperimentKind = Literal[
+    "train",
+    "benchmark",
+    "comparison",
+    "campaign",
+    "orchestration",
+    "operator_zoo",
+]
 ExperimentStatus = Literal["ok", "failed", "unavailable"]
 
 
