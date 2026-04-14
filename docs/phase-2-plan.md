@@ -1,7 +1,7 @@
 # Phase 2 Plan: Agentic Research Workbench
 
 Generated on 2026-04-14
-Status: DRAFT
+Status: IMPLEMENTED
 Mode: Builder
 Repo: `shrijacked/eml-lab`
 
@@ -293,6 +293,7 @@ sequenceDiagram
 | T8 | M3 | Add Streamlit tabs for traces and leaderboards | T6-T7 | Architecture |
 | T9 | M4 | Expand PySR into aggregated optional suites | T1-T3 | Architecture |
 | T10 | M5 | Add research-tier hard targets and reporting | T1-T6 | Dependency graph |
+| T11 | Polish | Add per-target research report bundles and dashboard preview | T10 | Data flow |
 
 ## Review Findings
 
@@ -343,6 +344,8 @@ Phase 2 initial slice is ready to implement when the following are true:
   ad hoc files
 - optional PySR suites degrade gracefully when Julia is absent
 - hard targets are explicitly labeled as research, not shipped claims
+- saved hard-target campaigns can be summarized into per-target markdown, JSON, and
+  CSV report bundles
 
 ## Recommended Build Order
 

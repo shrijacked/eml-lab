@@ -23,6 +23,7 @@ from eml_lab.comparison import (
     summarize_method_comparisons,
 )
 from eml_lab.operator_zoo import OperatorZooConfig, run_operator_zoo
+from eml_lab.research_reports import write_research_report
 from eml_lab.targets import get_target, list_targets
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
 
@@ -62,6 +63,13 @@ def build_parser() -> argparse.ArgumentParser:
     campaign = subparsers.add_parser("campaign", help="run a Phase 2 campaign suite")
     campaign.add_argument("--suite", choices=list_campaigns(), default="phase2-foundation")
     campaign.add_argument("--output-dir", type=Path, default=Path("runs"))
+
+    research_report = subparsers.add_parser(
+        "research-report",
+        help="build a per-target report from saved phase2-research campaign artifacts",
+    )
+    research_report.add_argument("--root", type=Path, default=Path("runs"))
+    research_report.add_argument("--output-dir", type=Path, default=Path("runs/research-reports"))
 
     compare = subparsers.add_parser("compare", help="run an optional PySR baseline comparison")
     compare.add_argument("--target", choices=list_targets(comparison_eligible=True), default="ln")
@@ -204,6 +212,10 @@ def main(argv: list[str] | None = None) -> int:
         result = run_campaign(args.suite, args.output_dir)
         print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0 if result.success else 2
+    if args.command == "research-report":
+        result = write_research_report(args.root, args.output_dir)
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        return 0
     if args.command == "compare":
         result = run_pysr_comparison(
             target=args.target,

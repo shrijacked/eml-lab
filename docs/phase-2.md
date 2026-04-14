@@ -49,5 +49,15 @@ This should wrap the real EML engine. It should not replace it.
 - `phase2-research` runs them as non-required training experiments.
 - Campaign artifacts now capture verifier output, target tier, expected depth, and
   known failure modes for each hard target.
+- Per-target research report bundles now aggregate saved research campaigns into
+  `summary.json`, `targets.csv`, `runs.csv`, `report.md`, and `manifest.json`.
+- Reports include unrun research targets as `not_run`, keeping scope gaps explicit.
 
 These should be treated as research experiments, not v1 promises.
+
+## Final Polish
+
+- The dashboard Campaigns tab can scan saved research campaigns and build the same
+  report bundle as the CLI.
+- The remaining release polish is documentation-only unless new research features are
+  added.

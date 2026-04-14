@@ -235,6 +235,32 @@ def test_cli_research_campaign_smoke(tmp_path: Path) -> None:
     assert (campaign_roots[0] / "manifest.json").exists()
 
 
+def test_cli_research_report_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "campaign-research"
+    report_dir = tmp_path / "research-reports"
+
+    assert main(["campaign", "--suite", "phase2-research", "--output-dir", str(output_dir)]) == 0
+    assert (
+        main(
+            [
+                "research-report",
+                "--root",
+                str(output_dir),
+                "--output-dir",
+                str(report_dir),
+            ]
+        )
+        == 0
+    )
+    report_roots = list(report_dir.glob("research-target-report-*"))
+    assert len(report_roots) == 1
+    assert (report_roots[0] / "summary.json").exists()
+    assert (report_roots[0] / "report.md").exists()
+    assert (report_roots[0] / "runs.csv").exists()
+    assert (report_roots[0] / "targets.csv").exists()
+    assert (report_roots[0] / "manifest.json").exists()
+
+
 def test_cli_orchestrate_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "orchestrate"
 

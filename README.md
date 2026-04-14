@@ -38,6 +38,7 @@ python -m eml_lab train --target ln --depth 3 --seed 0
 python -m eml_lab bench --suite shallow
 python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
+python -m eml_lab research-report --root runs --output-dir runs/research-reports
 python -m eml_lab campaign --suite phase2-operator-zoo
 python -m eml_lab compare-methods --target ln
 python -m eml_lab compare-methods-history --root runs
@@ -254,6 +255,22 @@ This suite intentionally tracks `x^2`, `x*y`, division, and `sin(x)` as research
 experiments. Failures stay visible in the artifacts with target tier, expected depth,
 known failure modes, and verifier output; they are not reported as solved.
 
+Build a per-target research report from saved research campaigns:
+
+```bash
+python -m eml_lab research-report --root runs --output-dir runs/research-reports
+```
+
+This writes a timestamped bundle with:
+- `summary.json`
+- `targets.csv`
+- `runs.csv`
+- `report.md`
+- `manifest.json`
+
+The report includes every research target, even when a target has not been run yet, so
+the gap between "tracked" and "attempted" stays visible.
+
 Run the local proposer/evaluator/pruner loop:
 
 ```bash
@@ -315,6 +332,7 @@ src/eml_lab/
   benchmarks.py    shallow suite and artifact writing
   comparison.py    optional PySR baseline comparison
   campaigns.py     Phase 2 campaign suites
+  research_reports.py per-target reports for research campaigns
   mutations.py     deterministic route mutations
   scoring.py       exact-verifier candidate scoring
   pruning.py       structural dedupe and beam pruning
@@ -344,4 +362,5 @@ src/eml_lab/
 - shipped: operator zoo benchmark/report for EML-like numerical variants
 - shipped: operator zoo campaign suite
 - shipped: hosted-demo packaging for Streamlit Cloud and Docker
-- next milestone: richer per-target research reports and final polish
+- shipped: per-target research report bundles for saved hard-target campaigns
+- next milestone: final repository polish and release notes

@@ -34,6 +34,11 @@ from eml_lab.comparison import (
 )
 from eml_lab.mutations import route_to_tree
 from eml_lab.operator_zoo import OperatorZooConfig, OperatorZooResult, run_operator_zoo
+from eml_lab.research_reports import (
+    ResearchAggregate,
+    summarize_research_runs,
+    write_research_report,
+)
 from eml_lab.targets import PAPER_FIXTURES, get_target, list_targets
 from eml_lab.training import TrainConfig, train_target
 from eml_lab.trees import rpn_string
@@ -300,6 +305,24 @@ def _campaign_rows(campaign_result: object) -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def _research_target_rows(report: ResearchAggregate) -> list[dict[str, object]]:
+    return [
+        {
+            "target": row.target,
+            "runs": row.runs,
+            "success_rate": row.success_rate,
+            "latest_status": row.latest_status,
+            "best_max_mse": row.best_max_mse,
+            "best_final_loss": row.best_final_loss,
+            "latest_failure_reason": row.latest_failure_reason,
+            "expected_depth": row.expected_depth,
+            "latest_rpn": row.latest_rpn,
+            "latest_output_dir": row.latest_output_dir,
+        }
+        for row in report.targets
+    ]
 
 
 def main() -> None:
@@ -735,6 +758,44 @@ def main() -> None:
             st.write(f"Artifacts: `{campaign_result.output_dir}`")
             st.dataframe(_campaign_rows(campaign_result), use_container_width=True)
             st.json(campaign_result.to_dict())
+        st.subheader("Research target reports")
+        research_root = st.text_input(
+            "Research campaign root",
+            value="runs",
+            key="research_report_root",
+        )
+        if st.button("Scan research campaigns", key="scan_research_campaigns"):
+            st.session_state["research_report_summary"] = summarize_research_runs(research_root)
+        research_summary = st.session_state.get("research_report_summary")
+        if research_summary is None:
+            st.info("Scan saved `phase2-research` campaigns for per-target outcomes.")
+        else:
+            metric_col1, metric_col2, metric_col3 = st.columns(3)
+            metric_col1.metric("Research runs", research_summary.run_count)
+            metric_col2.metric("Attempted targets", research_summary.attempted_target_count)
+            metric_col3.metric("Run success rate", f"{research_summary.success_rate:.0%}")
+            st.dataframe(_research_target_rows(research_summary), use_container_width=True)
+            st.caption(
+                "Status counts: " + json.dumps(research_summary.status_counts, sort_keys=True)
+            )
+            research_output_root = st.text_input(
+                "Research report output root",
+                value="runs/research-reports",
+                key="research_report_output_root",
+            )
+            if st.button("Build research report", key="build_research_report"):
+                st.session_state["last_research_report"] = write_research_report(
+                    research_root,
+                    research_output_root,
+                )
+            research_report = st.session_state.get("last_research_report")
+            if research_report is not None:
+                st.success(f"Built research target report at `{research_report.output_dir}`")
+                st.json(research_report.to_dict())
+                report_path = Path(research_report.report_path)
+                if report_path.exists():
+                    with st.expander("Research report preview"):
+                        st.markdown(report_path.read_text(encoding="utf-8"))
 
     with operator_zoo_tab:
         st.write(
