@@ -57,6 +57,8 @@ The app runs Streamlit locally. It uses the same package APIs as the CLI.
 Hosted-demo packaging lives in [docs/hosted-demo.md](docs/hosted-demo.md). The repo
 includes Streamlit Cloud files, a Dockerfile, and local smoke commands.
 
+Release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 ## Screenshots
 
 ![EML Lab train tab](docs/assets/train-tab.png)
@@ -342,7 +344,7 @@ src/eml_lab/
   app.py           Streamlit dashboard
 ```
 
-## Phase 2 Backlog
+## Phase 2 Status
 
 - reviewed execution plan: [docs/phase-2-plan.md](docs/phase-2-plan.md)
 - shipped: local proposer/evaluator/pruner orchestrator on top of the experiment
@@ -363,4 +365,4 @@ src/eml_lab/
 - shipped: operator zoo campaign suite
 - shipped: hosted-demo packaging for Streamlit Cloud and Docker
 - shipped: per-target research report bundles for saved hard-target campaigns
-- next milestone: final repository polish and release notes
+- release notes: [CHANGELOG.md](CHANGELOG.md)

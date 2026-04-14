@@ -49,6 +49,16 @@ from eml_lab.operator_zoo import (
     run_operator_zoo,
 )
 from eml_lab.operators import StabilityConfig, StabilityStats, eml_exact, eml_train
+from eml_lab.research_reports import (
+    ResearchAggregate,
+    ResearchReportResult,
+    ResearchRunEntry,
+    ResearchTargetRow,
+    aggregate_research_runs,
+    find_research_runs,
+    summarize_research_runs,
+    write_research_report,
+)
 from eml_lab.soft_tree import SoftEMLTree, snap_tree
 from eml_lab.targets import TargetSpec, get_target, list_targets
 from eml_lab.training import TrainConfig, TrainResult, train_target
@@ -59,6 +69,7 @@ __all__ = [
     "ArtifactFile",
     "ArtifactManifest",
     "aggregate_method_comparisons",
+    "aggregate_research_runs",
     "BenchmarkResult",
     "CampaignResult",
     "ComparisonResult",
@@ -85,6 +96,10 @@ __all__ = [
     "OrchestratorConfig",
     "OrchestratorResult",
     "PySRStatus",
+    "ResearchAggregate",
+    "ResearchReportResult",
+    "ResearchRunEntry",
+    "ResearchTargetRow",
     "aggregate_method_comparison_snapshots",
     "SoftEMLTree",
     "StabilityConfig",
@@ -99,6 +114,7 @@ __all__ = [
     "eml_train",
     "find_method_comparisons",
     "find_method_comparison_snapshots",
+    "find_research_runs",
     "from_rpn",
     "get_target",
     "list_targets",
@@ -116,10 +132,12 @@ __all__ = [
     "snapshot_method_comparisons",
     "summarize_method_comparisons",
     "summarize_method_comparison_snapshots",
+    "summarize_research_runs",
     "to_rpn",
     "train_target",
     "verify_tree",
     "write_method_comparison_export",
     "write_method_comparison_snapshot",
     "write_method_comparison_snapshot_history_report",
+    "write_research_report",
 ]

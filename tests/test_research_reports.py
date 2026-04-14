@@ -50,3 +50,11 @@ def test_write_research_report_creates_report_bundle(tmp_path: Path) -> None:
     assert "# Research Target Report" in report
     assert "## Per-Target Outcomes" in report
     assert "## Run Details" in report
+
+
+def test_research_report_api_exports_from_package_root() -> None:
+    from eml_lab import ResearchReportResult, summarize_research_runs, write_research_report
+
+    assert ResearchReportResult is not None
+    assert callable(summarize_research_runs)
+    assert callable(write_research_report)
