@@ -40,6 +40,7 @@ python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
 python -m eml_lab compare-methods --target ln
 python -m eml_lab compare-methods-history --root runs
+python -m eml_lab compare-methods-report --root runs
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -119,6 +120,15 @@ python -m eml_lab compare-methods-history --root runs
 The Streamlit Compare tab can now scan the same root directory, show saved
 `method-compare-*` runs in a table, and reload any one of them back into the side-by-side
 analysis view.
+
+Summarize saved cross-method runs:
+
+```bash
+python -m eml_lab compare-methods-report --root runs
+```
+
+This aggregates saved artifacts into target-level rollups, including run counts, required
+success rate, PySR availability rate, and the latest expression each method found.
 
 Run the first Phase 2 campaign suite:
 
@@ -221,6 +231,8 @@ src/eml_lab/
 - shipped: cross-method comparison runs for gradient, agentic, and optional PySR
   search
 - shipped: saved cross-method artifact discovery and reload in the dashboard and CLI
-- next milestone: richer multi-run analysis on top of saved cross-method artifacts
+- shipped: multi-run analytics for saved cross-method artifacts
+- next milestone: artifact-backed charts and target/seed filtering on top of those
+  saved analytics
 - hosted demo
 - operator zoo search for EML cousins

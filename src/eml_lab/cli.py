@@ -16,6 +16,7 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    summarize_method_comparisons,
 )
 from eml_lab.targets import get_target, list_targets
 from eml_lab.training import TrainConfig, train_target, write_train_artifacts
@@ -96,6 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="list saved cross-method comparison artifacts",
     )
     compare_history.add_argument("--root", type=Path, default=Path("runs"))
+
+    compare_report = subparsers.add_parser(
+        "compare-methods-report",
+        help="summarize saved cross-method comparison artifacts",
+    )
+    compare_report.add_argument("--root", type=Path, default=Path("runs"))
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -192,6 +199,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compare-methods-history":
         results = [entry.to_dict() for entry in find_method_comparisons(args.root)]
         print(json.dumps(results, indent=2, default=str))
+        return 0
+    if args.command == "compare-methods-report":
+        result = summarize_method_comparisons(args.root)
+        print(json.dumps(result.to_dict(), indent=2, default=str))
         return 0
     if args.command == "orchestrate":
         result = run_orchestrator(

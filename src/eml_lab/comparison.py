@@ -7,6 +7,7 @@ import json
 import shutil
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import torch
@@ -181,6 +182,46 @@ class MethodComparisonIndexEntry:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class MethodComparisonAggregateRow:
+    target: str
+    runs: int
+    required_success_rate: float
+    latest_status: str
+    latest_available: bool
+    latest_gradient_expression: str | None
+    latest_agentic_expression: str | None
+    latest_pysr_expression: str | None
+    latest_output_dir: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MethodComparisonAggregate:
+    root: str
+    run_count: int
+    target_count: int
+    required_success_rate: float
+    pysr_available_rate: float
+    status_counts: dict[str, int]
+    runs: tuple[MethodComparisonIndexEntry, ...]
+    latest_by_target: tuple[MethodComparisonAggregateRow, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "root": self.root,
+            "run_count": self.run_count,
+            "target_count": self.target_count,
+            "required_success_rate": self.required_success_rate,
+            "pysr_available_rate": self.pysr_available_rate,
+            "status_counts": self.status_counts,
+            "runs": [entry.to_dict() for entry in self.runs],
+            "latest_by_target": [row.to_dict() for row in self.latest_by_target],
+        }
+
+
 def detect_pysr_environment() -> PySRStatus:
     pysr_installed = importlib.util.find_spec("pysr") is not None
     julia_path = shutil.which("julia")
@@ -203,6 +244,10 @@ def detect_pysr_environment() -> PySRStatus:
             "PySR installs its Julia dependencies at first import."
         ),
     )
+
+
+def _timestamp_slug() -> str:
+    return datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
 
 
 def _load_pysr_regressor() -> type:
@@ -262,7 +307,7 @@ def run_method_comparison(
             "an orchestratable target."
         )
 
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    timestamp = _timestamp_slug()
     root = Path(output_dir) / f"method-compare-{spec.name}-{timestamp}"
     root.mkdir(parents=True, exist_ok=True)
 
@@ -310,7 +355,7 @@ def run_pysr_compare_suite(
         raise ValueError("Only the 'shallow' compare suite exists in Phase 2")
 
     status = detect_pysr_environment()
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    timestamp = _timestamp_slug()
     root = Path(output_dir) / f"compare-suite-{suite}-{timestamp}"
     root.mkdir(parents=True, exist_ok=True)
 
@@ -432,6 +477,64 @@ def find_method_comparisons(root: str | Path = "runs") -> tuple[MethodComparison
             )
         )
     return tuple(entries)
+
+
+def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonAggregate:
+    entries = find_method_comparisons(root)
+    run_count = len(entries)
+    if not entries:
+        return MethodComparisonAggregate(
+            root=str(Path(root)),
+            run_count=0,
+            target_count=0,
+            required_success_rate=0.0,
+            pysr_available_rate=0.0,
+            status_counts={},
+            runs=(),
+            latest_by_target=(),
+        )
+
+    status_counts: dict[str, int] = {}
+    by_target: dict[str, list[MethodComparisonIndexEntry]] = {}
+    required_successes = 0
+    available_runs = 0
+    for entry in entries:
+        status_counts[entry.status] = status_counts.get(entry.status, 0) + 1
+        by_target.setdefault(entry.target, []).append(entry)
+        if entry.required_success:
+            required_successes += 1
+        if entry.available:
+            available_runs += 1
+
+    latest_rows: list[MethodComparisonAggregateRow] = []
+    for target in sorted(by_target):
+        target_entries = by_target[target]
+        latest = target_entries[0]
+        success_count = sum(1 for entry in target_entries if entry.required_success)
+        latest_rows.append(
+            MethodComparisonAggregateRow(
+                target=target,
+                runs=len(target_entries),
+                required_success_rate=success_count / len(target_entries),
+                latest_status=latest.status,
+                latest_available=latest.available,
+                latest_gradient_expression=latest.gradient_expression,
+                latest_agentic_expression=latest.agentic_expression,
+                latest_pysr_expression=latest.pysr_expression,
+                latest_output_dir=latest.output_dir,
+            )
+        )
+
+    return MethodComparisonAggregate(
+        root=str(Path(root)),
+        run_count=run_count,
+        target_count=len(by_target),
+        required_success_rate=required_successes / run_count,
+        pysr_available_rate=available_runs / run_count,
+        status_counts=status_counts,
+        runs=entries,
+        latest_by_target=tuple(latest_rows),
+    )
 
 
 def _run_available_pysr(

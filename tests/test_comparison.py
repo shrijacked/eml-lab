@@ -4,6 +4,7 @@ from pathlib import Path
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
+    MethodComparisonAggregate,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
     PySRStatus,
@@ -13,6 +14,7 @@ from eml_lab.comparison import (
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    summarize_method_comparisons,
 )
 
 
@@ -280,3 +282,37 @@ def test_find_method_comparisons_discovers_latest_first(tmp_path: Path, monkeypa
     assert isinstance(entries[0], MethodComparisonIndexEntry)
     assert [entry.target for entry in entries[:2]] == ["ln", "exp"]
     assert entries[0].summary_path.endswith("summary.json")
+
+
+def test_summarize_method_comparisons_reports_target_level_rollups(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    first = run_method_comparison("exp", tmp_path)
+    second = run_method_comparison("ln", tmp_path)
+    third = run_method_comparison("exp", tmp_path)
+
+    os.utime(Path(first.output_dir) / "summary.json", (1, 1))
+    os.utime(Path(second.output_dir) / "summary.json", (2, 2))
+    os.utime(Path(third.output_dir) / "summary.json", (3, 3))
+
+    report = summarize_method_comparisons(tmp_path)
+
+    assert isinstance(report, MethodComparisonAggregate)
+    assert report.run_count == 3
+    assert report.target_count == 2
+    assert report.required_success_rate == 1.0
+    assert report.pysr_available_rate == 0.0
+    assert report.status_counts == {"unavailable": 3}
+    latest_by_target = {row.target: row for row in report.latest_by_target}
+    assert latest_by_target["exp"].runs == 2
+    assert latest_by_target["ln"].runs == 1

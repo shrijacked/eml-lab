@@ -91,6 +91,15 @@ def test_cli_compare_methods_history_smoke(tmp_path: Path) -> None:
     assert main(["compare-methods-history", "--root", str(output_dir)]) == 0
 
 
+def test_cli_compare_methods_report_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "compare-methods-report"
+
+    exit_code = main(["compare-methods", "--target", "exp", "--output-dir", str(output_dir)])
+
+    assert exit_code in {0, 3}
+    assert main(["compare-methods-report", "--root", str(output_dir)]) == 0
+
+
 def test_cli_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign"
 

@@ -13,14 +13,16 @@ from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
+    MethodComparisonAggregate,
+    MethodComparisonAggregateRow,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
     detect_pysr_environment,
-    find_method_comparisons,
     load_method_comparison,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
+    summarize_method_comparisons,
 )
 from eml_lab.mutations import route_to_tree
 from eml_lab.targets import PAPER_FIXTURES, get_target, list_targets
@@ -131,6 +133,25 @@ def _method_history_rows(
             }
         )
     return rows
+
+
+def _method_aggregate_rows(
+    rows: tuple[MethodComparisonAggregateRow, ...],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "target": row.target,
+            "runs": row.runs,
+            "required_success_rate": row.required_success_rate,
+            "latest_status": row.latest_status,
+            "latest_available": row.latest_available,
+            "gradient": row.latest_gradient_expression,
+            "agentic": row.latest_agentic_expression,
+            "pysr": row.latest_pysr_expression,
+            "output_dir": row.latest_output_dir,
+        }
+        for row in rows
+    ]
 
 
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
@@ -304,13 +325,28 @@ def main() -> None:
             key="method_compare_history_root",
         )
         if st.button("Scan saved runs", key="scan_method_compare_history"):
-            st.session_state["method_compare_history"] = find_method_comparisons(history_root)
+            report = summarize_method_comparisons(history_root)
+            st.session_state["method_compare_report"] = report
+            st.session_state["method_compare_history"] = report.runs
         history = st.session_state.get("method_compare_history")
+        report = st.session_state.get("method_compare_report")
         if history is None:
             st.info("Scan a root directory to discover saved `method-compare-*` artifacts.")
         elif not history:
             st.info("No saved cross-method runs were found under that root.")
         else:
+            if isinstance(report, MethodComparisonAggregate):
+                st.metric("Saved runs", report.run_count)
+                st.metric("Targets", report.target_count)
+                st.metric("Required success rate", f"{report.required_success_rate:.0%}")
+                st.metric("PySR available rate", f"{report.pysr_available_rate:.0%}")
+                st.subheader("Latest by target")
+                st.dataframe(
+                    _method_aggregate_rows(report.latest_by_target),
+                    use_container_width=True,
+                )
+                st.caption("Status counts: " + json.dumps(report.status_counts, sort_keys=True))
+            st.subheader("All saved runs")
             st.dataframe(_method_history_rows(history), use_container_width=True)
             selected_entry = st.selectbox(
                 "Saved run",

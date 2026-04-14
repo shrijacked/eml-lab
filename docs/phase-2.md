@@ -21,6 +21,7 @@ This should wrap the real EML engine. It should not replace it.
 - Cross-method comparison now exists for one target at a time, lining up gradient,
   agentic, and optional PySR results in one summary artifact.
 - Saved cross-method runs can now be rediscovered from disk and reloaded in the app.
+- Saved cross-method runs can now be aggregated into target-level analytics.
 - Keep this optional so the quickstart stays small and Julia stays off the critical path.
 
 ## Operator Zoo
