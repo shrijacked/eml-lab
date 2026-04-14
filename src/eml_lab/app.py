@@ -13,8 +13,11 @@ from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
+    MethodComparisonIndexEntry,
     MethodComparisonResult,
     detect_pysr_environment,
+    find_method_comparisons,
+    load_method_comparison,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
@@ -108,6 +111,26 @@ def _method_comparison_rows(result: MethodComparisonResult) -> list[dict[str, ob
             "notes": result.pysr.get("reason", result.pysr.get("install_hint")),
         },
     ]
+
+
+def _method_history_rows(
+    entries: tuple[MethodComparisonIndexEntry, ...],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for entry in entries:
+        rows.append(
+            {
+                "target": entry.target,
+                "status": entry.status,
+                "required_success": entry.required_success,
+                "available": entry.available,
+                "gradient": entry.gradient_expression,
+                "agentic": entry.agentic_expression,
+                "pysr": entry.pysr_expression,
+                "output_dir": entry.output_dir,
+            }
+        )
+    return rows
 
 
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
@@ -274,6 +297,33 @@ def main() -> None:
             st.write(f"Artifacts: `{method_comparison.output_dir}`")
             st.dataframe(_method_comparison_rows(method_comparison), use_container_width=True)
             st.json(method_comparison.to_dict())
+        st.subheader("Saved cross-method runs")
+        history_root = st.text_input(
+            "Artifact root",
+            value="runs",
+            key="method_compare_history_root",
+        )
+        if st.button("Scan saved runs", key="scan_method_compare_history"):
+            st.session_state["method_compare_history"] = find_method_comparisons(history_root)
+        history = st.session_state.get("method_compare_history")
+        if history is None:
+            st.info("Scan a root directory to discover saved `method-compare-*` artifacts.")
+        elif not history:
+            st.info("No saved cross-method runs were found under that root.")
+        else:
+            st.dataframe(_method_history_rows(history), use_container_width=True)
+            selected_entry = st.selectbox(
+                "Saved run",
+                history,
+                format_func=lambda entry: (
+                    f"{entry.target} | {Path(entry.output_dir).name} | {entry.status}"
+                ),
+                key="selected_method_compare_history",
+            )
+            if st.button("Load saved run", key="load_method_compare_history"):
+                st.session_state["last_method_comparison"] = load_method_comparison(
+                    selected_entry.summary_path
+                )
         if compare_suite is None:
             st.info(
                 "Run the compare suite to aggregate PySR baseline results across stable targets."

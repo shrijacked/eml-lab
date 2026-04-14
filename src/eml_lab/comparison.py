@@ -163,6 +163,24 @@ class MethodComparisonResult:
         }
 
 
+@dataclass(frozen=True)
+class MethodComparisonIndexEntry:
+    target: str
+    output_dir: str
+    summary_path: str
+    manifest_path: str
+    available: bool
+    required_success: bool
+    success: bool
+    status: str
+    gradient_expression: str | None
+    agentic_expression: str | None
+    pysr_expression: str | None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
 def detect_pysr_environment() -> PySRStatus:
     pysr_installed = importlib.util.find_spec("pysr") is not None
     julia_path = shutil.which("julia")
@@ -362,6 +380,58 @@ def run_pysr_compare_suite(
     )
     summary_path.write_text(json.dumps(result.to_dict(), indent=2, default=str), encoding="utf-8")
     return result
+
+
+def load_method_comparison(source: str | Path) -> MethodComparisonResult:
+    path = Path(source)
+    summary_path = path / "summary.json" if path.is_dir() else path
+    if not summary_path.exists():
+        raise FileNotFoundError(f"Method comparison summary not found: {summary_path}")
+
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    return MethodComparisonResult(
+        target=str(payload["target"]),
+        output_dir=str(payload["output_dir"]),
+        manifest_path=str(payload["manifest_path"]),
+        pysr_status=PySRStatus(**payload["pysr_status"]),
+        gradient=dict(payload["gradient"]),
+        agentic=dict(payload["agentic"]),
+        pysr=dict(payload["pysr"]),
+    )
+
+
+def find_method_comparisons(root: str | Path = "runs") -> tuple[MethodComparisonIndexEntry, ...]:
+    source = Path(root)
+    if not source.exists():
+        return ()
+
+    summary_paths = sorted(
+        source.rglob("method-compare-*/summary.json"),
+        key=lambda path: (path.stat().st_mtime, path.as_posix()),
+        reverse=True,
+    )
+    entries: list[MethodComparisonIndexEntry] = []
+    for summary_path in summary_paths:
+        try:
+            result = load_method_comparison(summary_path)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue
+        entries.append(
+            MethodComparisonIndexEntry(
+                target=result.target,
+                output_dir=result.output_dir,
+                summary_path=str(summary_path),
+                manifest_path=result.manifest_path,
+                available=result.available,
+                required_success=result.required_success,
+                success=result.success,
+                status=result.status,
+                gradient_expression=result.gradient.get("rpn"),
+                agentic_expression=result.agentic.get("best_rpn"),
+                pysr_expression=result.pysr.get("best_equation"),
+            )
+        )
+    return tuple(entries)
 
 
 def _run_available_pysr(

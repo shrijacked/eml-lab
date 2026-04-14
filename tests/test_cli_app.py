@@ -82,6 +82,15 @@ def test_cli_compare_methods_smoke(tmp_path: Path) -> None:
     assert (roots[0] / "manifest.json").exists()
 
 
+def test_cli_compare_methods_history_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "compare-methods-history"
+
+    exit_code = main(["compare-methods", "--target", "exp", "--output-dir", str(output_dir)])
+
+    assert exit_code in {0, 3}
+    assert main(["compare-methods-history", "--root", str(output_dir)]) == 0
+
+
 def test_cli_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign"
 

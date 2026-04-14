@@ -12,6 +12,7 @@ from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.benchmarks import run_benchmark_suite
 from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
+    find_method_comparisons,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
@@ -89,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare_methods.add_argument("--niterations", type=int, default=40)
     compare_methods.add_argument("--maxsize", type=int, default=20)
     compare_methods.add_argument("--seed", type=int, default=0)
+
+    compare_history = subparsers.add_parser(
+        "compare-methods-history",
+        help="list saved cross-method comparison artifacts",
+    )
+    compare_history.add_argument("--root", type=Path, default=Path("runs"))
 
     orchestrate = subparsers.add_parser(
         "orchestrate", help="run the local proposer/evaluator/pruner loop"
@@ -182,6 +189,10 @@ def main(argv: list[str] | None = None) -> int:
         if result.success:
             return 0 if result.available else 3
         return 2
+    if args.command == "compare-methods-history":
+        results = [entry.to_dict() for entry in find_method_comparisons(args.root)]
+        print(json.dumps(results, indent=2, default=str))
+        return 0
     if args.command == "orchestrate":
         result = run_orchestrator(
             OrchestratorConfig(

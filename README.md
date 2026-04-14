@@ -39,6 +39,7 @@ python -m eml_lab bench --suite shallow
 python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
 python -m eml_lab compare-methods --target ln
+python -m eml_lab compare-methods-history --root runs
 python -m eml_lab orchestrate --target ln --budget 24
 python -m eml_lab app
 ```
@@ -108,6 +109,16 @@ python -m eml_lab compare-methods --target ln --output-dir runs
 This lines up the gradient baseline, the local agentic route search, and the optional
 PySR baseline in one artifact bundle so you can compare snapped RPNs, verifier error,
 and PySR availability from one summary file.
+
+List saved cross-method runs:
+
+```bash
+python -m eml_lab compare-methods-history --root runs
+```
+
+The Streamlit Compare tab can now scan the same root directory, show saved
+`method-compare-*` runs in a table, and reload any one of them back into the side-by-side
+analysis view.
 
 Run the first Phase 2 campaign suite:
 
@@ -209,6 +220,7 @@ src/eml_lab/
   `x*y`, division, and `sin(x)`
 - shipped: cross-method comparison runs for gradient, agentic, and optional PySR
   search
-- next milestone: richer dashboard analysis on top of saved cross-method artifacts
+- shipped: saved cross-method artifact discovery and reload in the dashboard and CLI
+- next milestone: richer multi-run analysis on top of saved cross-method artifacts
 - hosted demo
 - operator zoo search for EML cousins

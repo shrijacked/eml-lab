@@ -1,11 +1,15 @@
+import os
 from pathlib import Path
 
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
+    MethodComparisonIndexEntry,
     MethodComparisonResult,
     PySRStatus,
     detect_pysr_environment,
+    find_method_comparisons,
+    load_method_comparison,
     run_method_comparison,
     run_pysr_compare_suite,
     run_pysr_comparison,
@@ -231,3 +235,48 @@ def test_run_method_comparison_uses_fake_pysr(monkeypatch, tmp_path: Path) -> No
     root = Path(result.output_dir)
     assert (root / "summary.json").exists()
     assert Path(result.manifest_path).exists()
+
+
+def test_load_method_comparison_round_trips(tmp_path: Path, monkeypatch) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    result = run_method_comparison("exp", tmp_path)
+    loaded = load_method_comparison(result.output_dir)
+
+    assert isinstance(loaded, MethodComparisonResult)
+    assert loaded.target == result.target
+    assert loaded.gradient["rpn"] == result.gradient["rpn"]
+    assert loaded.agentic["best_rpn"] == result.agentic["best_rpn"]
+    assert loaded.pysr["status"] == "unavailable"
+
+
+def test_find_method_comparisons_discovers_latest_first(tmp_path: Path, monkeypatch) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    first = run_method_comparison("exp", tmp_path)
+    second = run_method_comparison("ln", tmp_path)
+
+    os.utime(Path(first.output_dir) / "summary.json", (1, 1))
+    os.utime(Path(second.output_dir) / "summary.json", (2, 2))
+
+    entries = find_method_comparisons(tmp_path)
+
+    assert isinstance(entries[0], MethodComparisonIndexEntry)
+    assert [entry.target for entry in entries[:2]] == ["ln", "exp"]
+    assert entries[0].summary_path.endswith("summary.json")
