@@ -8,6 +8,7 @@ from eml_lab.comparison import (
     MethodComparisonIndexEntry,
     MethodComparisonResult,
     PySRStatus,
+    aggregate_method_comparisons,
     detect_pysr_environment,
     find_method_comparisons,
     load_method_comparison,
@@ -282,6 +283,10 @@ def test_find_method_comparisons_discovers_latest_first(tmp_path: Path, monkeypa
     assert isinstance(entries[0], MethodComparisonIndexEntry)
     assert [entry.target for entry in entries[:2]] == ["ln", "exp"]
     assert entries[0].summary_path.endswith("summary.json")
+    assert entries[0].seed == 0
+    assert entries[0].created_at
+    assert entries[0].gradient_max_mse is not None
+    assert entries[0].agentic_max_mse is not None
 
 
 def test_summarize_method_comparisons_reports_target_level_rollups(
@@ -315,4 +320,36 @@ def test_summarize_method_comparisons_reports_target_level_rollups(
     assert report.status_counts == {"unavailable": 3}
     latest_by_target = {row.target: row for row in report.latest_by_target}
     assert latest_by_target["exp"].runs == 2
+    assert latest_by_target["exp"].seed_count == 1
     assert latest_by_target["ln"].runs == 1
+
+
+def test_aggregate_method_comparisons_can_summarize_filtered_subset(
+    tmp_path: Path, monkeypatch
+) -> None:
+    status = PySRStatus(
+        available=False,
+        pysr_installed=False,
+        julia_found=False,
+        julia_path=None,
+        reason="PySR is not installed and Julia is not on PATH.",
+        install_hint="Install with `python -m pip install pysr` and ensure `julia` is on PATH.",
+    )
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+
+    run_method_comparison("exp", tmp_path, seed=0)
+    run_method_comparison("exp", tmp_path, seed=1)
+    run_method_comparison("ln", tmp_path, seed=0)
+
+    entries = find_method_comparisons(tmp_path)
+    filtered = tuple(entry for entry in entries if entry.target == "exp")
+    report = aggregate_method_comparisons(filtered, root=tmp_path)
+
+    assert report.run_count == 2
+    assert report.target_count == 1
+    assert report.required_success_rate == 1.0
+    latest_row = report.latest_by_target[0]
+    assert latest_row.target == "exp"
+    assert latest_row.seed_count == 2
+    assert latest_row.best_gradient_max_mse == 0.0
+    assert latest_row.best_agentic_max_mse == 0.0

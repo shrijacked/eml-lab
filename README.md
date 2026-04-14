@@ -130,6 +130,10 @@ python -m eml_lab compare-methods-report --root runs
 This aggregates saved artifacts into target-level rollups, including run counts, required
 success rate, PySR availability rate, and the latest expression each method found.
 
+The Compare tab now lets you filter those saved runs by target, status, and seed, then
+inspect artifact-backed charts for runs by target, runs by seed, success rate by target,
+and gradient vs. agentic error trends.
+
 Run the first Phase 2 campaign suite:
 
 ```bash
@@ -232,7 +236,7 @@ src/eml_lab/
   search
 - shipped: saved cross-method artifact discovery and reload in the dashboard and CLI
 - shipped: multi-run analytics for saved cross-method artifacts
-- next milestone: artifact-backed charts and target/seed filtering on top of those
-  saved analytics
+- shipped: artifact-backed charts and target/seed filtering on top of saved analytics
+- next milestone: richer charting and export for long-running research histories
 - hosted demo
 - operator zoo search for EML cousins

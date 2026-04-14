@@ -13,6 +13,7 @@ from eml_lab.comparison import (
     MethodComparisonIndexEntry,
     MethodComparisonResult,
     PySRStatus,
+    aggregate_method_comparisons,
     detect_pysr_environment,
     find_method_comparisons,
     load_method_comparison,
@@ -32,6 +33,7 @@ from eml_lab.verify import VerificationReport, verify_tree
 __all__ = [
     "ArtifactFile",
     "ArtifactManifest",
+    "aggregate_method_comparisons",
     "BenchmarkResult",
     "CampaignResult",
     "ComparisonResult",

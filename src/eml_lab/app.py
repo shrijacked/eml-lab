@@ -17,6 +17,7 @@ from eml_lab.comparison import (
     MethodComparisonAggregateRow,
     MethodComparisonIndexEntry,
     MethodComparisonResult,
+    aggregate_method_comparisons,
     detect_pysr_environment,
     load_method_comparison,
     run_method_comparison,
@@ -122,10 +123,14 @@ def _method_history_rows(
     for entry in entries:
         rows.append(
             {
+                "created_at": entry.created_at,
                 "target": entry.target,
+                "seed": entry.seed,
                 "status": entry.status,
                 "required_success": entry.required_success,
                 "available": entry.available,
+                "gradient_max_mse": entry.gradient_max_mse,
+                "agentic_max_mse": entry.agentic_max_mse,
                 "gradient": entry.gradient_expression,
                 "agentic": entry.agentic_expression,
                 "pysr": entry.pysr_expression,
@@ -142,9 +147,12 @@ def _method_aggregate_rows(
         {
             "target": row.target,
             "runs": row.runs,
+            "seed_count": row.seed_count,
             "required_success_rate": row.required_success_rate,
             "latest_status": row.latest_status,
             "latest_available": row.latest_available,
+            "best_gradient_max_mse": row.best_gradient_max_mse,
+            "best_agentic_max_mse": row.best_agentic_max_mse,
             "gradient": row.latest_gradient_expression,
             "agentic": row.latest_agentic_expression,
             "pysr": row.latest_pysr_expression,
@@ -152,6 +160,69 @@ def _method_aggregate_rows(
         }
         for row in rows
     ]
+
+
+def _filter_method_history(
+    entries: tuple[MethodComparisonIndexEntry, ...],
+    *,
+    targets: list[str],
+    statuses: list[str],
+    seeds: list[int],
+    required_only: bool,
+) -> tuple[MethodComparisonIndexEntry, ...]:
+    target_set = set(targets)
+    status_set = set(statuses)
+    seed_set = set(seeds)
+    filtered: list[MethodComparisonIndexEntry] = []
+    for entry in entries:
+        if target_set and entry.target not in target_set:
+            continue
+        if status_set and entry.status not in status_set:
+            continue
+        if seed_set and entry.seed not in seed_set:
+            continue
+        if required_only and not entry.required_success:
+            continue
+        filtered.append(entry)
+    return tuple(filtered)
+
+
+def _single_row_chart(values: dict[str, float | int]) -> dict[str, list[float | int]]:
+    return {key: [value] for key, value in values.items()}
+
+
+def _target_run_chart(entries: tuple[MethodComparisonAggregateRow, ...]) -> dict[str, list[int]]:
+    return _single_row_chart({entry.target: entry.runs for entry in entries})
+
+
+def _target_success_chart(
+    entries: tuple[MethodComparisonAggregateRow, ...],
+) -> dict[str, list[float]]:
+    return _single_row_chart(
+        {entry.target: entry.required_success_rate for entry in entries}
+    )
+
+
+def _seed_count_chart(entries: tuple[MethodComparisonIndexEntry, ...]) -> dict[str, list[int]]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        label = str(entry.seed) if entry.seed is not None else "unknown"
+        counts[label] = counts.get(label, 0) + 1
+    return _single_row_chart(counts)
+
+
+def _error_trend_chart(entries: tuple[MethodComparisonIndexEntry, ...]) -> dict[str, list[float]]:
+    ordered = sorted(entries, key=lambda entry: entry.created_at)
+    return {
+        "gradient_max_mse": [
+            entry.gradient_max_mse if entry.gradient_max_mse is not None else float("nan")
+            for entry in ordered
+        ],
+        "agentic_max_mse": [
+            entry.agentic_max_mse if entry.agentic_max_mse is not None else float("nan")
+            for entry in ordered
+        ],
+    }
 
 
 def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str, object]]:
@@ -335,31 +406,100 @@ def main() -> None:
         elif not history:
             st.info("No saved cross-method runs were found under that root.")
         else:
-            if isinstance(report, MethodComparisonAggregate):
-                st.metric("Saved runs", report.run_count)
-                st.metric("Targets", report.target_count)
-                st.metric("Required success rate", f"{report.required_success_rate:.0%}")
-                st.metric("PySR available rate", f"{report.pysr_available_rate:.0%}")
+            all_targets = sorted({entry.target for entry in history})
+            all_statuses = sorted({entry.status for entry in history})
+            all_seeds = sorted({entry.seed for entry in history if entry.seed is not None})
+            filter_col1, filter_col2, filter_col3 = st.columns(3)
+            selected_targets = filter_col1.multiselect(
+                "Target filter",
+                all_targets,
+                default=all_targets,
+                key="method_compare_filter_targets",
+            )
+            selected_statuses = filter_col2.multiselect(
+                "Status filter",
+                all_statuses,
+                default=all_statuses,
+                key="method_compare_filter_statuses",
+            )
+            selected_seeds = filter_col3.multiselect(
+                "Seed filter",
+                all_seeds,
+                default=all_seeds,
+                key="method_compare_filter_seeds",
+            )
+            required_only = st.checkbox(
+                "Only show required-success runs",
+                value=False,
+                key="method_compare_filter_required_only",
+            )
+            filtered_history = _filter_method_history(
+                history,
+                targets=selected_targets,
+                statuses=selected_statuses,
+                seeds=selected_seeds,
+                required_only=required_only,
+            )
+            filtered_report = aggregate_method_comparisons(
+                filtered_history,
+                root=report.root if isinstance(report, MethodComparisonAggregate) else history_root,
+            )
+            if not filtered_history:
+                st.info("No saved runs match the current filters.")
+            else:
+                metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+                metric_col1.metric("Saved runs", filtered_report.run_count)
+                metric_col2.metric("Targets", filtered_report.target_count)
+                metric_col3.metric(
+                    "Required success rate",
+                    f"{filtered_report.required_success_rate:.0%}",
+                )
+                metric_col4.metric(
+                    "PySR available rate",
+                    f"{filtered_report.pysr_available_rate:.0%}",
+                )
+                chart_col1, chart_col2 = st.columns(2)
+                with chart_col1:
+                    st.caption("Runs by target")
+                    if filtered_report.latest_by_target:
+                        st.bar_chart(_target_run_chart(filtered_report.latest_by_target))
+                with chart_col2:
+                    st.caption("Required success rate by target")
+                    if filtered_report.latest_by_target:
+                        st.bar_chart(_target_success_chart(filtered_report.latest_by_target))
+                chart_col3, chart_col4 = st.columns(2)
+                with chart_col3:
+                    st.caption("Runs by seed")
+                    st.bar_chart(_seed_count_chart(filtered_history))
+                with chart_col4:
+                    st.caption("Status counts")
+                    st.bar_chart(_single_row_chart(filtered_report.status_counts))
+                st.caption("Error trend ordered oldest to newest within the filtered runs.")
+                st.line_chart(_error_trend_chart(filtered_history))
                 st.subheader("Latest by target")
                 st.dataframe(
-                    _method_aggregate_rows(report.latest_by_target),
+                    _method_aggregate_rows(filtered_report.latest_by_target),
                     use_container_width=True,
                 )
-                st.caption("Status counts: " + json.dumps(report.status_counts, sort_keys=True))
-            st.subheader("All saved runs")
-            st.dataframe(_method_history_rows(history), use_container_width=True)
-            selected_entry = st.selectbox(
-                "Saved run",
-                history,
-                format_func=lambda entry: (
-                    f"{entry.target} | {Path(entry.output_dir).name} | {entry.status}"
-                ),
-                key="selected_method_compare_history",
-            )
-            if st.button("Load saved run", key="load_method_compare_history"):
-                st.session_state["last_method_comparison"] = load_method_comparison(
-                    selected_entry.summary_path
+                st.caption(
+                    "Status counts: " + json.dumps(filtered_report.status_counts, sort_keys=True)
                 )
+            st.subheader("All saved runs")
+            st.dataframe(_method_history_rows(filtered_history), use_container_width=True)
+            if filtered_history:
+                selected_entry = st.selectbox(
+                    "Saved run",
+                    filtered_history,
+                    format_func=lambda entry: (
+                        f"{entry.target} | seed {entry.seed} | "
+                        f"{Path(entry.output_dir).name} | {entry.status}"
+                    ),
+                    key="selected_method_compare_history",
+                )
+                if st.button("Load saved run", key="load_method_compare_history"):
+                    st.session_state["last_method_comparison"] = load_method_comparison(
+                        selected_entry.summary_path
+                    )
         if compare_suite is None:
             st.info(
                 "Run the compare suite to aggregate PySR baseline results across stable targets."

@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -170,6 +171,8 @@ class MethodComparisonIndexEntry:
     output_dir: str
     summary_path: str
     manifest_path: str
+    created_at: str
+    seed: int | None
     available: bool
     required_success: bool
     success: bool
@@ -177,6 +180,8 @@ class MethodComparisonIndexEntry:
     gradient_expression: str | None
     agentic_expression: str | None
     pysr_expression: str | None
+    gradient_max_mse: float | None
+    agentic_max_mse: float | None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -186,12 +191,15 @@ class MethodComparisonIndexEntry:
 class MethodComparisonAggregateRow:
     target: str
     runs: int
+    seed_count: int
     required_success_rate: float
     latest_status: str
     latest_available: bool
     latest_gradient_expression: str | None
     latest_agentic_expression: str | None
     latest_pysr_expression: str | None
+    best_gradient_max_mse: float | None
+    best_agentic_max_mse: float | None
     latest_output_dir: str
 
     def to_dict(self) -> dict[str, object]:
@@ -461,12 +469,18 @@ def find_method_comparisons(root: str | Path = "runs") -> tuple[MethodComparison
             result = load_method_comparison(summary_path)
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             continue
+        created_at = datetime.fromtimestamp(summary_path.stat().st_mtime, UTC).isoformat()
+        gradient_mse = result.gradient.get("verification", {}).get("max_mse")
+        agentic_mse = result.agentic.get("max_mse")
+        seed = result.gradient.get("config", {}).get("seed")
         entries.append(
             MethodComparisonIndexEntry(
                 target=result.target,
                 output_dir=result.output_dir,
                 summary_path=str(summary_path),
                 manifest_path=result.manifest_path,
+                created_at=created_at,
+                seed=seed if isinstance(seed, int) else None,
                 available=result.available,
                 required_success=result.required_success,
                 success=result.success,
@@ -474,15 +488,21 @@ def find_method_comparisons(root: str | Path = "runs") -> tuple[MethodComparison
                 gradient_expression=result.gradient.get("rpn"),
                 agentic_expression=result.agentic.get("best_rpn"),
                 pysr_expression=result.pysr.get("best_equation"),
+                gradient_max_mse=float(gradient_mse) if gradient_mse is not None else None,
+                agentic_max_mse=float(agentic_mse) if agentic_mse is not None else None,
             )
         )
     return tuple(entries)
 
 
-def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonAggregate:
-    entries = find_method_comparisons(root)
-    run_count = len(entries)
-    if not entries:
+def aggregate_method_comparisons(
+    entries: Sequence[MethodComparisonIndexEntry],
+    *,
+    root: str | Path = "runs",
+) -> MethodComparisonAggregate:
+    runs = tuple(entries)
+    run_count = len(runs)
+    if not runs:
         return MethodComparisonAggregate(
             root=str(Path(root)),
             run_count=0,
@@ -498,7 +518,7 @@ def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonA
     by_target: dict[str, list[MethodComparisonIndexEntry]] = {}
     required_successes = 0
     available_runs = 0
-    for entry in entries:
+    for entry in runs:
         status_counts[entry.status] = status_counts.get(entry.status, 0) + 1
         by_target.setdefault(entry.target, []).append(entry)
         if entry.required_success:
@@ -511,16 +531,26 @@ def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonA
         target_entries = by_target[target]
         latest = target_entries[0]
         success_count = sum(1 for entry in target_entries if entry.required_success)
+        seeds = {entry.seed for entry in target_entries if entry.seed is not None}
+        gradient_mses = [
+            entry.gradient_max_mse for entry in target_entries if entry.gradient_max_mse is not None
+        ]
+        agentic_mses = [
+            entry.agentic_max_mse for entry in target_entries if entry.agentic_max_mse is not None
+        ]
         latest_rows.append(
             MethodComparisonAggregateRow(
                 target=target,
                 runs=len(target_entries),
+                seed_count=len(seeds),
                 required_success_rate=success_count / len(target_entries),
                 latest_status=latest.status,
                 latest_available=latest.available,
                 latest_gradient_expression=latest.gradient_expression,
                 latest_agentic_expression=latest.agentic_expression,
                 latest_pysr_expression=latest.pysr_expression,
+                best_gradient_max_mse=min(gradient_mses) if gradient_mses else None,
+                best_agentic_max_mse=min(agentic_mses) if agentic_mses else None,
                 latest_output_dir=latest.output_dir,
             )
         )
@@ -532,9 +562,13 @@ def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonA
         required_success_rate=required_successes / run_count,
         pysr_available_rate=available_runs / run_count,
         status_counts=status_counts,
-        runs=entries,
+        runs=runs,
         latest_by_target=tuple(latest_rows),
     )
+
+
+def summarize_method_comparisons(root: str | Path = "runs") -> MethodComparisonAggregate:
+    return aggregate_method_comparisons(find_method_comparisons(root), root=root)
 
 
 def _run_available_pysr(
