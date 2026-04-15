@@ -12,6 +12,8 @@ solved problem.
 - Proposer suggests deterministic route mutations and optional depth expansions.
 - Evaluator runs the exact verifier and candidate score model.
 - Pruner deduplicates structurally equivalent trees and keeps the top beam.
+- The umbrella `phase2` campaign runs the orchestrator alongside foundation,
+  research-target, and operator-zoo checks.
 
 This should wrap the real EML engine. It should not replace it.
 

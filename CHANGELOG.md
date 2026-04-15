@@ -21,6 +21,7 @@ Initial EML Lab release.
 - Operator zoo benchmark for EML-like variants, keeping the paper operator marked as the
   exact reference.
 - Per-target research report bundles for saved hard-target campaigns.
+- Umbrella `phase2` campaign for a single end-to-end local Phase 2 smoke run.
 - Streamlit Cloud and Docker packaging for local-first hosted-demo handoff.
 
 ### Verified

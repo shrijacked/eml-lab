@@ -36,6 +36,7 @@ python -m pip install -e ".[dev]"
 python -m pytest
 python -m eml_lab train --target ln --depth 3 --seed 0
 python -m eml_lab bench --suite shallow
+python -m eml_lab campaign --suite phase2
 python -m eml_lab campaign --suite phase2-foundation
 python -m eml_lab campaign --suite phase2-research
 python -m eml_lab research-report --root runs --output-dir runs/research-reports
@@ -237,7 +238,16 @@ docker run --rm -p 8501:8501 eml-lab
 See [docs/hosted-demo.md](docs/hosted-demo.md) for Streamlit Community Cloud settings
 and container notes.
 
-Run the first Phase 2 campaign suite:
+Run the full local Phase 2 campaign suite:
+
+```bash
+python -m eml_lab campaign --suite phase2 --output-dir runs
+```
+
+This umbrella suite writes one campaign bundle spanning foundation artifacts, the
+deterministic agentic loop, research-tier hard targets, and the operator zoo.
+
+Run only the first Phase 2 foundation slice:
 
 ```bash
 python -m eml_lab campaign --suite phase2-foundation --output-dir runs

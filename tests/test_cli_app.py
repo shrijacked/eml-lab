@@ -224,6 +224,16 @@ def test_cli_campaign_smoke(tmp_path: Path) -> None:
     assert (campaign_roots[0] / "manifest.json").exists()
 
 
+def test_cli_phase2_umbrella_campaign_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "campaign-phase2"
+
+    assert main(["campaign", "--suite", "phase2", "--output-dir", str(output_dir)]) == 0
+    campaign_roots = list(output_dir.glob("campaign-phase2-*"))
+    assert len(campaign_roots) == 1
+    assert (campaign_roots[0] / "summary.json").exists()
+    assert (campaign_roots[0] / "manifest.json").exists()
+
+
 def test_cli_agentic_campaign_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "campaign-agentic"
 

@@ -69,6 +69,92 @@ class CampaignResult:
 
 
 CAMPAIGNS: dict[str, CampaignSpec] = {
+    "phase2": CampaignSpec(
+        name="phase2",
+        description=(
+            "Umbrella Phase 2 smoke covering foundation artifacts, agentic search, "
+            "research targets, and operator-zoo checks."
+        ),
+        steps=(
+            CampaignStep(name="shallow-benchmark", kind="benchmark", suite="shallow"),
+            CampaignStep(
+                name="compare-exp",
+                kind="comparison",
+                target="exp",
+                required=False,
+            ),
+            CampaignStep(
+                name="compare-ln",
+                kind="comparison",
+                target="ln",
+                required=False,
+            ),
+            CampaignStep(
+                name="orchestrate-exp",
+                kind="orchestration",
+                target="exp",
+                budget=12,
+                beam_width=4,
+                seed_count=3,
+                seed=0,
+            ),
+            CampaignStep(
+                name="orchestrate-ln",
+                kind="orchestration",
+                target="ln",
+                budget=24,
+                beam_width=6,
+                seed_count=4,
+                seed=0,
+            ),
+            CampaignStep(
+                name="research-square",
+                kind="train",
+                target="square",
+                required=False,
+                depth=4,
+                steps=40,
+                snap_strategy="logits",
+                init_strategy="random",
+            ),
+            CampaignStep(
+                name="research-mul",
+                kind="train",
+                target="mul",
+                required=False,
+                depth=4,
+                steps=40,
+                snap_strategy="logits",
+                init_strategy="random",
+            ),
+            CampaignStep(
+                name="research-div",
+                kind="train",
+                target="div",
+                required=False,
+                depth=5,
+                steps=40,
+                snap_strategy="logits",
+                init_strategy="random",
+            ),
+            CampaignStep(
+                name="research-sin",
+                kind="train",
+                target="sin",
+                required=False,
+                depth=5,
+                steps=48,
+                snap_strategy="logits",
+                init_strategy="random",
+            ),
+            CampaignStep(
+                name="operator-zoo",
+                kind="operator_zoo",
+                grid_points=17,
+                epsilon=1e-8,
+            ),
+        ),
+    ),
     "phase2-foundation": CampaignSpec(
         name="phase2-foundation",
         description="Shared artifact smoke covering benchmarks and optional comparisons.",
