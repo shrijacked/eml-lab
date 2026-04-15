@@ -13,6 +13,15 @@ def test_cli_app_dry_run() -> None:
     assert main(["app", "--dry-run"]) == 0
 
 
+def test_train_tab_exposes_temperature_schedule_controls() -> None:
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert "Temperature start" in app_source
+    assert "Temperature end" in app_source
+    assert "temperature_start=float(temperature_start)" in app_source
+    assert "temperature_end=float(temperature_end)" in app_source
+
+
 def test_cli_train_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "train"
 

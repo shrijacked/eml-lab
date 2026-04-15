@@ -359,6 +359,23 @@ def main() -> None:
         seed = st.number_input("Seed", min_value=0, max_value=10_000, value=0)
         steps = st.slider("Steps", min_value=20, max_value=600, value=180, step=20)
         learning_rate = st.number_input("Learning rate", min_value=0.001, max_value=0.2, value=0.03)
+        temperature_col1, temperature_col2 = st.columns(2)
+        temperature_start = temperature_col1.number_input(
+            "Temperature start",
+            min_value=0.05,
+            max_value=10.0,
+            value=2.0,
+            step=0.05,
+        )
+        temperature_end = temperature_col2.number_input(
+            "Temperature end",
+            min_value=0.01,
+            max_value=5.0,
+            value=0.2,
+            step=0.01,
+        )
+        if float(temperature_end) > float(temperature_start):
+            st.warning("Cooling schedule ends above its start.")
         snap_strategy = st.selectbox("Snap strategy", ["best_discrete", "logits"])
         init_choices = ["random", "known_route"] if spec.known_route is not None else ["random"]
         init_strategy = st.selectbox("Init strategy", init_choices)
@@ -374,6 +391,8 @@ def main() -> None:
                     seed=int(seed),
                     steps=int(steps),
                     learning_rate=float(learning_rate),
+                    temperature_start=float(temperature_start),
+                    temperature_end=float(temperature_end),
                     snap_strategy=snap_strategy,
                     init_strategy=init_strategy,
                 )
