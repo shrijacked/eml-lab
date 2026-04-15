@@ -1,6 +1,6 @@
 # Phase 2 Status
 
-Detailed execution plan: [docs/phase-2-plan.md](/Users/owlxshri/Desktop/personal%20projects/paper_viz/docs/phase-2-plan.md)
+Detailed execution plan: [phase-2-plan.md](phase-2-plan.md)
 
 EML Lab v1 is intentionally small. Phase 2 turns the repo into a local research
 workbench around the same exact verifier, without claiming hard-target recovery as a
@@ -41,7 +41,7 @@ This should wrap the real EML engine. It should not replace it.
 
 - Streamlit Cloud packaging now exists through `runtime.txt`, `requirements.txt`, and `.streamlit/config.toml`.
 - Docker packaging now exists through `Dockerfile` and `.dockerignore`.
-- Deployment notes live in [docs/hosted-demo.md](/Users/owlxshri/Desktop/personal%20projects/paper_viz/docs/hosted-demo.md).
+- Deployment notes live in [hosted-demo.md](hosted-demo.md).
 - No external deployment is claimed until a host/account is actually connected.
 
 ## Hard Targets
@@ -60,4 +60,4 @@ These should be treated as research experiments, not v1 promises.
 
 - The dashboard Campaigns tab can scan saved research campaigns and build the same
   report bundle as the CLI.
-- Release notes live in [CHANGELOG.md](/Users/owlxshri/Desktop/personal%20projects/paper_viz/CHANGELOG.md).
+- Release notes live in [CHANGELOG.md](../CHANGELOG.md).
