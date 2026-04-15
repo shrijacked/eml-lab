@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,3 +50,33 @@ def test_ci_uses_node24_ready_github_actions() -> None:
     assert "actions/setup-python@v6" in workflow
     assert "actions/checkout@v4" not in workflow
     assert "actions/setup-python@v5" not in workflow
+
+
+def test_dev_dependencies_include_package_build_tool() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
+
+    assert any(dependency.startswith("build>=") for dependency in dev_dependencies)
+
+
+def test_package_metadata_uses_modern_license_expression() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["build-system"]["requires"][0].startswith("setuptools>=77")
+    assert pyproject["project"]["license"] == "MIT"
+    assert pyproject["project"]["license-files"] == ["LICENSE"]
+    assert not any(
+        classifier.startswith("License ::") for classifier in pyproject["project"]["classifiers"]
+    )
+
+
+def test_ci_builds_distribution_after_tests() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    test_command = "python -m pytest"
+    build_command = "python -m build"
+
+    assert test_command in workflow
+    assert build_command in workflow
+    assert workflow.index(test_command) < workflow.index(build_command)

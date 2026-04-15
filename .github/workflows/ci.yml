@@ -33,3 +33,6 @@ jobs:
 
       - name: Test
         run: python -m pytest
+
+      - name: Build distribution
+        run: python -m build
