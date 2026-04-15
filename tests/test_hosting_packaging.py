@@ -40,3 +40,12 @@ def test_ci_preinstalls_cpu_torch_before_package_install() -> None:
     assert torch_install in workflow
     assert package_install in workflow
     assert workflow.index(torch_install) < workflow.index(package_install)
+
+
+def test_ci_uses_node24_ready_github_actions() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "actions/checkout@v6" in workflow
+    assert "actions/setup-python@v6" in workflow
+    assert "actions/checkout@v4" not in workflow
+    assert "actions/setup-python@v5" not in workflow
