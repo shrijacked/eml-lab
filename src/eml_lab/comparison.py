@@ -6,7 +6,10 @@ import csv
 import importlib.util
 import json
 import math
+import os
 import shutil
+import sys
+import tempfile
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -45,7 +48,7 @@ class ComparisonResult:
 
     @property
     def available(self) -> bool:
-        return self.pysr_status.available
+        return self.pysr_status.available and self.status != "unavailable"
 
     @property
     def status(self) -> str:
@@ -97,7 +100,7 @@ class ComparisonSuiteResult:
 
     @property
     def available(self) -> bool:
-        return self.pysr_status.available
+        return self.pysr_status.available and all(run.available for run in self.runs)
 
     @property
     def success(self) -> bool:
@@ -135,7 +138,7 @@ class MethodComparisonResult:
 
     @property
     def available(self) -> bool:
-        return self.pysr_status.available
+        return self.pysr_status.available and self.status != "unavailable"
 
     @property
     def status(self) -> str:
@@ -347,24 +350,45 @@ def detect_pysr_environment() -> PySRStatus:
     pysr_installed = importlib.util.find_spec("pysr") is not None
     julia_path = shutil.which("julia")
     julia_found = julia_path is not None
+    managed_julia = importlib.util.find_spec("juliapkg") is not None
     reason = None
     if not pysr_installed and not julia_found:
         reason = "PySR is not installed and Julia is not on PATH."
     elif not pysr_installed:
         reason = "PySR is not installed."
-    elif not julia_found:
+    elif not julia_found and not managed_julia:
         reason = "Julia is not on PATH."
     return PySRStatus(
-        available=pysr_installed and julia_found,
+        available=pysr_installed and (julia_found or managed_julia),
         pysr_installed=pysr_installed,
         julia_found=julia_found,
         julia_path=julia_path,
         reason=reason,
         install_hint=(
-            "Install with `python -m pip install pysr` and ensure `julia` is on PATH. "
-            "PySR installs its Julia dependencies at first import."
+            "Install with `python -m pip install pysr`. If `julia` is not on PATH, "
+            "PySR can be bootstrapped into a writable Julia depot on first import."
         ),
     )
+
+
+def _prepare_julia_environment() -> str:
+    depot_path = os.environ.get("JULIA_DEPOT_PATH")
+    if depot_path:
+        Path(depot_path).mkdir(parents=True, exist_ok=True)
+    else:
+        depot = Path(tempfile.gettempdir()) / "eml-lab-julia-depot"
+        depot.mkdir(parents=True, exist_ok=True)
+        os.environ["JULIA_DEPOT_PATH"] = str(depot)
+        os.environ.setdefault("JULIAUP_DEPOT_PATH", str(depot))
+        depot_path = str(depot)
+
+    local_julia = (
+        Path(sys.prefix) / "julia_env" / "pyjuliapkg" / "install" / "bin" / "julia"
+    )
+    if local_julia.exists():
+        os.environ.setdefault("PYTHON_JULIAPKG_EXE", str(local_julia))
+
+    return depot_path
 
 
 def _timestamp_slug() -> str:
@@ -1087,7 +1111,19 @@ def _run_available_pysr(
             "reason": "The optional PySR baseline in v1 supports univariate targets only.",
         }
 
-    PySRRegressor = _load_pysr_regressor()
+    depot_path = _prepare_julia_environment()
+    try:
+        PySRRegressor = _load_pysr_regressor()
+    except Exception as exc:
+        return {
+            "status": "unavailable",
+            "reason": str(exc),
+            "install_hint": (
+                "PySR needs a reachable Julia download source the first time it boots a "
+                "managed runtime. If you already have Julia installed, add it to PATH."
+            ),
+            "julia_depot_path": depot_path,
+        }
     inputs = sample_inputs(spec, points=points)
     variable_name = spec.variables[0]
     x_tensor = inputs[variable_name]
@@ -1126,6 +1162,7 @@ def _run_available_pysr(
         return {
             "status": "error",
             "reason": str(exc),
+            "julia_depot_path": depot_path,
             "elapsed_seconds": time.perf_counter() - start,
         }
     elapsed = time.perf_counter() - start
@@ -1157,6 +1194,7 @@ def _run_available_pysr(
         "maxsize": maxsize,
         "equations": equations_records,
         "output_directory": str(model_output),
+        "julia_depot_path": depot_path,
     }
 
 

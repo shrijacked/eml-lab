@@ -13,6 +13,7 @@ from eml_lab.comparison import (
     MethodComparisonSnapshotIndexEntry,
     MethodComparisonSnapshotResult,
     PySRStatus,
+    _prepare_julia_environment,
     aggregate_method_comparisons,
     detect_pysr_environment,
     export_method_comparisons,
@@ -40,6 +41,55 @@ def test_detect_pysr_environment_reports_missing_dependencies(monkeypatch) -> No
     assert not status.pysr_installed
     assert not status.julia_found
     assert "PySR" in status.install_hint
+
+
+def test_detect_pysr_environment_accepts_managed_julia_runtime(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "importlib.util.find_spec",
+        lambda name: object() if name in {"pysr", "juliapkg"} else None,
+    )
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    status = detect_pysr_environment()
+
+    assert status.available
+    assert status.pysr_installed
+    assert not status.julia_found
+    assert status.reason is None
+    assert "bootstrapped" in status.install_hint
+
+
+def test_prepare_julia_environment_uses_temp_depot_when_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("JULIA_DEPOT_PATH", raising=False)
+    monkeypatch.delenv("JULIAUP_DEPOT_PATH", raising=False)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    depot = _prepare_julia_environment()
+
+    assert depot == str(tmp_path / "eml-lab-julia-depot")
+    assert os.environ["JULIA_DEPOT_PATH"] == depot
+    assert os.environ["JULIAUP_DEPOT_PATH"] == depot
+    assert Path(depot).exists()
+
+
+def test_prepare_julia_environment_reuses_bootstrapped_local_julia(
+    monkeypatch, tmp_path: Path
+) -> None:
+    local_julia = tmp_path / "julia_env" / "pyjuliapkg" / "install" / "bin" / "julia"
+    local_julia.parent.mkdir(parents=True, exist_ok=True)
+    local_julia.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr("sys.prefix", str(tmp_path))
+    monkeypatch.delenv("PYTHON_JULIAPKG_EXE", raising=False)
+    monkeypatch.delenv("JULIA_DEPOT_PATH", raising=False)
+    monkeypatch.delenv("JULIAUP_DEPOT_PATH", raising=False)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path / "tmp"))
+
+    depot = _prepare_julia_environment()
+
+    assert depot == str(tmp_path / "tmp" / "eml-lab-julia-depot")
+    assert os.environ["PYTHON_JULIAPKG_EXE"] == str(local_julia)
 
 
 def test_run_pysr_comparison_writes_unavailable_summary(tmp_path: Path, monkeypatch) -> None:
@@ -108,6 +158,63 @@ def test_run_pysr_comparison_uses_fake_pysr(monkeypatch, tmp_path: Path) -> None
     assert (tmp_path / "compare-exp" / "manifest.json").exists()
     assert (tmp_path / "compare-exp" / "eml" / "manifest.json").exists()
     assert (tmp_path / "compare-exp" / "pysr" / "equations.csv").exists()
+
+
+def test_run_pysr_comparison_reports_bootstrap_failure_without_crashing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status = PySRStatus(
+        available=True,
+        pysr_installed=True,
+        julia_found=False,
+        julia_path=None,
+        reason=None,
+        install_hint="PySR can be bootstrapped into a writable Julia depot on first import.",
+    )
+
+    def _raise_loader_error():
+        raise RuntimeError("network bootstrap failed")
+
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", _raise_loader_error)
+    monkeypatch.setattr("eml_lab.comparison._prepare_julia_environment", lambda: "/tmp/julia")
+
+    result = run_pysr_comparison("exp", tmp_path)
+
+    assert not result.available
+    assert not result.success
+    assert result.pysr["status"] == "unavailable"
+    assert "network bootstrap failed" in str(result.pysr["reason"])
+    assert result.pysr["julia_depot_path"] == "/tmp/julia"
+    assert "install_hint" in result.pysr
+    assert (tmp_path / "compare-exp" / "summary.json").exists()
+
+
+def test_run_pysr_compare_suite_marks_runtime_bootstrap_failure_unavailable(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status = PySRStatus(
+        available=True,
+        pysr_installed=True,
+        julia_found=False,
+        julia_path=None,
+        reason=None,
+        install_hint="PySR can be bootstrapped into a writable Julia depot on first import.",
+    )
+
+    def _raise_loader_error():
+        raise RuntimeError("network bootstrap failed")
+
+    monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
+    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", _raise_loader_error)
+    monkeypatch.setattr("eml_lab.comparison._prepare_julia_environment", lambda: "/tmp/julia")
+
+    result = run_pysr_compare_suite("shallow", tmp_path)
+
+    assert not result.available
+    assert result.pysr_success_rate == 0.0
+    assert all(not run.available for run in result.runs)
+    assert all(run.status == "unavailable" for run in result.runs)
 
 
 def test_run_pysr_compare_suite_writes_summary_when_unavailable(
