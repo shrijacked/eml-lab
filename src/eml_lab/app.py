@@ -288,6 +288,66 @@ def _orchestrator_leaderboard_rows(result: OrchestratorResult) -> list[dict[str,
     return rows
 
 
+def _orchestrator_generation_rows(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    explicit_rows = [
+        {
+            "generation": int(event["generation"]),
+            "evaluated_candidates": int(event["evaluated_candidates"]),
+            "kept_in_beam": int(event["kept_in_beam"]),
+            "passed_candidates": int(event["passed_candidates"]),
+            "best_rpn": str(event["best_rpn"]),
+            "best_total_score": float(event["best_total_score"]),
+            "best_max_mse": float(event["best_max_mse"]),
+            "best_passed": bool(event["best_passed"]),
+            "best_failure_reason": event["best_failure_reason"],
+            "best_changed": bool(event["best_changed"]),
+        }
+        for event in events
+        if event.get("kind") == "generation_summary"
+    ]
+    if explicit_rows:
+        return explicit_rows
+
+    candidate_rows = [event for event in events if event.get("kind") == "candidate"]
+    if not candidate_rows:
+        return []
+    grouped: dict[int, list[dict[str, object]]] = {}
+    for event in candidate_rows:
+        grouped.setdefault(int(event["generation"]), []).append(event)
+
+    rows: list[dict[str, object]] = []
+    previous_best_rpn: str | None = None
+    for generation in sorted(grouped):
+        generation_events = grouped[generation]
+        best = min(generation_events, key=lambda event: float(event["total_score"]))
+        best_rpn = str(best["rpn"])
+        rows.append(
+            {
+                "generation": generation,
+                "evaluated_candidates": len(generation_events),
+                "kept_in_beam": len(generation_events),
+                "passed_candidates": sum(
+                    1 for event in generation_events if bool(event.get("passed"))
+                ),
+                "best_rpn": best_rpn,
+                "best_total_score": float(best["total_score"]),
+                "best_max_mse": float(best["max_mse"]),
+                "best_passed": bool(best["passed"]),
+                "best_failure_reason": best.get("failure_reason"),
+                "best_changed": best_rpn != previous_best_rpn,
+            }
+        )
+        previous_best_rpn = best_rpn
+    return rows
+
+
+def _best_so_far_chart(rows: list[dict[str, object]]) -> dict[str, list[float]]:
+    return {
+        "best_total_score": [float(row["best_total_score"]) for row in rows],
+        "best_max_mse": [float(row["best_max_mse"]) for row in rows],
+    }
+
+
 def _campaign_rows(campaign_result: object) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for run in campaign_result.runs:
@@ -767,19 +827,29 @@ def main() -> None:
         else:
             spec = get_target(orchestrator_result.target)
             best_tree = route_to_tree(orchestrator_result.best_route, spec.variables)
+            orchestrator_events = _read_jsonl(orchestrator_result.events_path)
+            generation_rows = _orchestrator_generation_rows(orchestrator_events)
             st.metric("Verifier", "passed" if orchestrator_result.success else "failed")
             st.metric("Candidates", orchestrator_result.evaluated_candidates)
             st.metric("Generations", orchestrator_result.generations)
             st.code(orchestrator_result.best_rpn)
             st.caption(f"Started from `{orchestrator_result.initial_best_rpn}`")
             st.pyplot(tree_figure(best_tree))
+            if generation_rows:
+                st.subheader("Best so far")
+                latest_generation = generation_rows[-1]
+                st.metric("Best score", f"{float(latest_generation['best_total_score']):.3e}")
+                st.write(latest_generation["best_rpn"])
+                st.line_chart(_best_so_far_chart(generation_rows))
+                st.subheader("Generation summary")
+                st.dataframe(generation_rows, use_container_width=True)
             st.subheader("Leaderboard")
             st.dataframe(
                 _orchestrator_leaderboard_rows(orchestrator_result),
                 use_container_width=True,
             )
             st.subheader("Event log")
-            st.dataframe(_read_jsonl(orchestrator_result.events_path), use_container_width=True)
+            st.dataframe(orchestrator_events, use_container_width=True)
             st.subheader("Summary")
             st.json(orchestrator_result.to_dict())
 
@@ -820,8 +890,21 @@ def main() -> None:
                     st.dataframe(list(leaderboard), use_container_width=True)
                 events_path = selected_run.metrics.get("events_path")
                 if isinstance(events_path, str):
+                    campaign_events = _read_jsonl(events_path)
+                    generation_rows = _orchestrator_generation_rows(campaign_events)
+                    if generation_rows:
+                        st.subheader("Campaign best so far")
+                        latest_generation = generation_rows[-1]
+                        st.metric(
+                            "Best campaign score",
+                            f"{float(latest_generation['best_total_score']):.3e}",
+                        )
+                        st.write(latest_generation["best_rpn"])
+                        st.line_chart(_best_so_far_chart(generation_rows))
+                        st.subheader("Campaign generation summary")
+                        st.dataframe(generation_rows, use_container_width=True)
                     st.subheader("Campaign event log")
-                    st.dataframe(_read_jsonl(events_path), use_container_width=True)
+                    st.dataframe(campaign_events, use_container_width=True)
             st.json(campaign_result.to_dict())
         st.subheader("Saved campaigns")
         campaign_history_root = st.text_input(

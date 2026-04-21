@@ -68,3 +68,17 @@ def test_orchestrator_recovers_ln_from_seed_mutations(tmp_path: Path) -> None:
     assert (Path(result.output_dir) / "summary.json").exists()
     assert (Path(result.output_dir) / "leaderboard.json").exists()
     assert (Path(result.output_dir) / "events.jsonl").exists()
+
+
+def test_orchestrator_writes_generation_summary_events(tmp_path: Path) -> None:
+    result = run_orchestrator(
+        OrchestratorConfig(target="exp", seed=0, budget=12, beam_width=4, seed_count=3),
+        tmp_path,
+    )
+
+    events = (Path(result.output_dir) / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    summaries = [event for event in events if '"kind": "generation_summary"' in event]
+
+    assert summaries
+    assert '"best_rpn": "x 1 E"' in summaries[-1]
+    assert '"kept_in_beam":' in summaries[-1]

@@ -46,6 +46,13 @@ def test_campaign_tab_exposes_saved_campaign_loading() -> None:
     assert "load_campaign" in app_source
 
 
+def test_orchestrate_tab_exposes_generation_summary() -> None:
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert "Generation summary" in app_source
+    assert "Best so far" in app_source
+
+
 def test_cli_train_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "train"
 

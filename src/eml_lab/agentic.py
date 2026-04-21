@@ -144,11 +144,20 @@ def run_orchestrator(
     frontier = prune_top(frontier, config.beam_width)
     best = prune_top(frontier, 1)[0]
     initial_best = best
+    _append_generation_summary(
+        events_path,
+        generation=0,
+        evaluated_candidates=len(seed_mutations),
+        frontier=frontier,
+        best=best,
+        best_changed=True,
+    )
     seen_routes = {candidate.route for candidate in frontier}
     generations = 0
 
     while evaluated < config.budget and frontier and not best.score.passed:
         generations += 1
+        previous_best = best
         proposals: list[RouteMutation] = []
         for candidate in frontier:
             proposals.extend(
@@ -184,6 +193,14 @@ def run_orchestrator(
         combined = [*frontier, *evaluated_candidates, best]
         frontier = prune_top(combined, config.beam_width)
         best = prune_top([best, *frontier], 1)[0]
+        _append_generation_summary(
+            events_path,
+            generation=generations,
+            evaluated_candidates=len(next_mutations),
+            frontier=frontier,
+            best=best,
+            best_changed=best.rpn != previous_best.rpn,
+        )
 
     leaderboard_candidates = prune_top(dedupe_candidates([*frontier, best, initial_best]), 10)
     leaderboard = tuple(candidate.to_dict() for candidate in leaderboard_candidates)
@@ -273,3 +290,29 @@ def _event_payload(candidate: RouteCandidate) -> dict[str, object]:
         "max_mse": candidate.score.max_mse,
         "failure_reason": candidate.score.failure_reason,
     }
+
+
+def _append_generation_summary(
+    events_path: Path,
+    *,
+    generation: int,
+    evaluated_candidates: int,
+    frontier: list[RouteCandidate],
+    best: RouteCandidate,
+    best_changed: bool,
+) -> None:
+    payload = {
+        "kind": "generation_summary",
+        "generation": generation,
+        "evaluated_candidates": evaluated_candidates,
+        "kept_in_beam": len(frontier),
+        "passed_candidates": sum(1 for candidate in frontier if candidate.score.passed),
+        "best_rpn": best.rpn,
+        "best_total_score": best.score.total_score,
+        "best_max_mse": best.score.max_mse,
+        "best_passed": best.score.passed,
+        "best_failure_reason": best.score.failure_reason,
+        "best_changed": best_changed,
+    }
+    with events_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, default=str) + "\n")
