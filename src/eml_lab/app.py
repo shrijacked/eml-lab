@@ -46,7 +46,7 @@ from eml_lab.research_reports import (
 from eml_lab.targets import PAPER_FIXTURES, get_target, list_targets
 from eml_lab.training import TrainConfig, train_target
 from eml_lab.trees import rpn_string
-from eml_lab.visualize import tree_figure
+from eml_lab.visualize import logits_heatmap_figure, tree_figure
 
 
 def _orchestratable_targets() -> list[str]:
@@ -413,8 +413,12 @@ def main() -> None:
             st.metric("Snap source", result.snap_source)
             st.code(result.rpn)
             st.pyplot(tree_figure(result.tree))
+            st.subheader("Failure reason")
+            st.write(result.verification.failure_reason or "Passed exact verification.")
             st.subheader("Loss")
             st.line_chart({"loss": list(result.losses)})
+            st.subheader("Logits heatmap")
+            st.pyplot(logits_heatmap_figure(result.logits_table))
             st.subheader("Logit probabilities")
             st.dataframe(list(result.logits_table), use_container_width=True)
             st.subheader("Verification")
