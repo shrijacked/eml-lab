@@ -37,6 +37,15 @@ def test_snap_tab_exposes_logits_heatmap_and_failure_reason() -> None:
     assert "logits_heatmap_figure" in app_source
 
 
+def test_campaign_tab_exposes_saved_campaign_loading() -> None:
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert "Saved campaigns" in app_source
+    assert "Load saved campaign" in app_source
+    assert "find_campaign_results" in app_source
+    assert "load_campaign" in app_source
+
+
 def test_cli_train_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "train"
 

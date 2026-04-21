@@ -68,6 +68,28 @@ class CampaignResult:
         }
 
 
+@dataclass(frozen=True)
+class CampaignIndexEntry:
+    suite: str
+    created_at: str
+    success: bool
+    run_count: int
+    output_dir: str
+    summary_path: str
+    manifest_path: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "suite": self.suite,
+            "created_at": self.created_at,
+            "success": self.success,
+            "run_count": self.run_count,
+            "output_dir": self.output_dir,
+            "summary_path": self.summary_path,
+            "manifest_path": self.manifest_path,
+        }
+
+
 CAMPAIGNS: dict[str, CampaignSpec] = {
     "phase2": CampaignSpec(
         name="phase2",
@@ -270,6 +292,57 @@ def get_campaign(name: str) -> CampaignSpec:
     except KeyError as exc:
         valid = ", ".join(list_campaigns())
         raise KeyError(f"Unknown campaign {name!r}. Valid campaigns: {valid}") from exc
+
+
+def load_campaign(path: str | Path) -> CampaignResult:
+    summary_path = Path(path)
+    if summary_path.is_dir():
+        summary_path = summary_path / "summary.json"
+    data = json.loads(summary_path.read_text(encoding="utf-8"))
+    runs = tuple(
+        ExperimentRecord(
+            name=run["name"],
+            kind=run["kind"],
+            status=run["status"],
+            success=run["success"],
+            required=run["required"],
+            output_dir=run["output_dir"],
+            summary_path=run["summary_path"],
+            manifest_path=run.get("manifest_path"),
+            metrics=run["metrics"],
+        )
+        for run in data["runs"]
+    )
+    return CampaignResult(
+        suite=data["suite"],
+        output_dir=data["output_dir"],
+        manifest_path=data["manifest_path"],
+        runs=runs,
+    )
+
+
+def find_campaign_results(root: str | Path) -> tuple[CampaignIndexEntry, ...]:
+    source = Path(root)
+    summary_paths = set(source.rglob("campaign-*/summary.json"))
+    if source.name.startswith("campaign-") and (source / "summary.json").exists():
+        summary_paths.add(source / "summary.json")
+
+    entries: list[CampaignIndexEntry] = []
+    for summary_path in sorted(summary_paths, key=lambda path: path.stat().st_mtime, reverse=True):
+        result = load_campaign(summary_path)
+        created_at = datetime.fromtimestamp(summary_path.stat().st_mtime, UTC).isoformat()
+        entries.append(
+            CampaignIndexEntry(
+                suite=result.suite,
+                created_at=created_at,
+                success=result.success,
+                run_count=len(result.runs),
+                output_dir=result.output_dir,
+                summary_path=str(summary_path),
+                manifest_path=result.manifest_path,
+            )
+        )
+    return tuple(entries)
 
 
 def run_campaign(

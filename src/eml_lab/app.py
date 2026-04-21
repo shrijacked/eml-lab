@@ -13,7 +13,7 @@ from eml_lab.benchmarks import (
     benchmark_table,
     run_benchmark_suite,
 )
-from eml_lab.campaigns import list_campaigns, run_campaign
+from eml_lab.campaigns import find_campaign_results, list_campaigns, load_campaign, run_campaign
 from eml_lab.comparison import (
     ComparisonResult,
     ComparisonSuiteResult,
@@ -327,6 +327,22 @@ def _research_target_rows(report: ResearchAggregate) -> list[dict[str, object]]:
         }
         for row in report.targets
     ]
+
+
+def _campaign_history_rows(entries: tuple[object, ...]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for entry in entries:
+        rows.append(
+            {
+                "created_at": entry.created_at,
+                "suite": entry.suite,
+                "success": entry.success,
+                "run_count": entry.run_count,
+                "output_dir": entry.output_dir,
+                "summary_path": entry.summary_path,
+            }
+        )
+    return rows
 
 
 def main() -> None:
@@ -786,7 +802,56 @@ def main() -> None:
             st.metric("Success", "passed" if campaign_result.success else "failed")
             st.write(f"Artifacts: `{campaign_result.output_dir}`")
             st.dataframe(_campaign_rows(campaign_result), use_container_width=True)
+            run_names = [run.name for run in campaign_result.runs]
+            selected_run_name = st.selectbox(
+                "Campaign run",
+                run_names,
+                key="campaign_run_selection",
+            )
+            selected_run = next(
+                run for run in campaign_result.runs if run.name == selected_run_name
+            )
+            st.subheader("Campaign trace")
+            st.json(selected_run.to_dict())
+            if selected_run.kind == "orchestration":
+                leaderboard = selected_run.metrics.get("leaderboard", [])
+                if leaderboard:
+                    st.subheader("Campaign leaderboard")
+                    st.dataframe(list(leaderboard), use_container_width=True)
+                events_path = selected_run.metrics.get("events_path")
+                if isinstance(events_path, str):
+                    st.subheader("Campaign event log")
+                    st.dataframe(_read_jsonl(events_path), use_container_width=True)
             st.json(campaign_result.to_dict())
+        st.subheader("Saved campaigns")
+        campaign_history_root = st.text_input(
+            "Campaign artifact root",
+            value="runs",
+            key="campaign_history_root",
+        )
+        if st.button("Scan saved campaigns", key="scan_saved_campaigns"):
+            st.session_state["campaign_history"] = find_campaign_results(campaign_history_root)
+        campaign_history = st.session_state.get("campaign_history")
+        if campaign_history is None:
+            st.info("Scan a root directory to discover saved `campaign-*` artifacts.")
+        elif not campaign_history:
+            st.info("No saved campaigns were found under that root.")
+        else:
+            st.dataframe(_campaign_history_rows(campaign_history), use_container_width=True)
+            selected_campaign_index = st.selectbox(
+                "Saved campaign",
+                list(range(len(campaign_history))),
+                format_func=lambda index: (
+                    f"{campaign_history[index].suite} | "
+                    f"{campaign_history[index].created_at} | "
+                    f"{campaign_history[index].output_dir}"
+                ),
+                key="saved_campaign_selection",
+            )
+            if st.button("Load saved campaign", key="load_saved_campaign"):
+                st.session_state["last_campaign"] = load_campaign(
+                    campaign_history[selected_campaign_index].summary_path
+                )
         st.subheader("Research target reports")
         research_root = st.text_input(
             "Research campaign root",

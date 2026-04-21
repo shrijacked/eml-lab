@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from eml_lab.campaigns import CampaignResult, list_campaigns, run_campaign
+from eml_lab.campaigns import (
+    CampaignResult,
+    find_campaign_results,
+    list_campaigns,
+    load_campaign,
+    run_campaign,
+)
 
 
 def test_list_campaigns_includes_phase2_foundation() -> None:
@@ -57,3 +63,17 @@ def test_run_operator_zoo_campaign_writes_artifacts(tmp_path: Path) -> None:
     assert Path(zoo_runs[0].summary_path).exists()
     assert Path(zoo_runs[0].manifest_path).exists()
     assert zoo_runs[0].metrics["best"] is not None
+
+
+def test_find_campaign_results_loads_saved_campaigns(tmp_path: Path) -> None:
+    result = run_campaign("phase2-agentic", tmp_path)
+
+    entries = find_campaign_results(tmp_path)
+
+    assert len(entries) == 1
+    assert entries[0].suite == "phase2-agentic"
+    assert entries[0].run_count == len(result.runs)
+    loaded = load_campaign(entries[0].summary_path)
+    assert loaded.suite == result.suite
+    assert len(loaded.runs) == len(result.runs)
+    assert loaded.output_dir == result.output_dir
