@@ -8,7 +8,11 @@ from pathlib import Path
 import streamlit as st
 
 from eml_lab.agentic import OrchestratorConfig, OrchestratorResult, run_orchestrator
-from eml_lab.benchmarks import benchmark_table, run_benchmark_suite
+from eml_lab.benchmarks import (
+    benchmark_seed_sensitivity_table,
+    benchmark_table,
+    run_benchmark_suite,
+)
 from eml_lab.campaigns import list_campaigns, run_campaign
 from eml_lab.comparison import (
     ComparisonResult,
@@ -427,6 +431,8 @@ def main() -> None:
             st.metric("Recovery rate", f"{bench.recovery_rate:.0%}")
             st.write(f"Artifacts: `{bench.output_dir}`")
             st.dataframe(benchmark_table(bench), use_container_width=True)
+            st.subheader("Seed sensitivity")
+            st.dataframe(benchmark_seed_sensitivity_table(bench), use_container_width=True)
 
     with compare_tab:
         status = detect_pysr_environment()

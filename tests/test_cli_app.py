@@ -22,6 +22,13 @@ def test_train_tab_exposes_temperature_schedule_controls() -> None:
     assert "temperature_end=float(temperature_end)" in app_source
 
 
+def test_bench_tab_exposes_seed_sensitivity() -> None:
+    app_source = Path(app.__file__).read_text(encoding="utf-8")
+
+    assert "Seed sensitivity" in app_source
+    assert "benchmark_seed_sensitivity_table" in app_source
+
+
 def test_cli_train_smoke(tmp_path: Path) -> None:
     output_dir = tmp_path / "train"
 

@@ -35,6 +35,7 @@ class BenchmarkResult:
             "manifest_path": self.manifest_path,
             "success": self.success,
             "recovery_rate": self.recovery_rate,
+            "seed_sensitivity": benchmark_seed_sensitivity_table(self),
             "runs": list(self.runs),
         }
 
@@ -106,3 +107,39 @@ def run_benchmark_suite(suite: str = "shallow", output_dir: str | Path = "runs")
 
 def benchmark_table(result: BenchmarkResult) -> list[dict[str, object]]:
     return [dict(run) for run in result.runs]
+
+
+def benchmark_seed_sensitivity_table(result: BenchmarkResult) -> list[dict[str, object]]:
+    grouped: dict[str, list[dict[str, object]]] = {}
+    for run in result.runs:
+        grouped.setdefault(str(run["target"]), []).append(dict(run))
+
+    rows: list[dict[str, object]] = []
+    for target, runs in sorted(grouped.items()):
+        max_mses = [float(run["max_mse"]) for run in runs if run.get("max_mse") is not None]
+        runtimes = [
+            float(run["elapsed_seconds"])
+            for run in runs
+            if run.get("elapsed_seconds") is not None
+        ]
+        best_mse = min(max_mses) if max_mses else float("nan")
+        worst_mse = max(max_mses) if max_mses else float("nan")
+        fastest = min(runtimes) if runtimes else float("nan")
+        slowest = max(runtimes) if runtimes else float("nan")
+        seed_values = {run.get("seed") for run in runs}
+        rows.append(
+            {
+                "target": target,
+                "run_count": len(runs),
+                "seed_count": len(seed_values),
+                "seeds": ", ".join(str(seed) for seed in sorted(seed_values, key=str)),
+                "success_rate": sum(1 for run in runs if run.get("success")) / len(runs),
+                "best_max_mse": best_mse,
+                "worst_max_mse": worst_mse,
+                "mse_spread": worst_mse - best_mse,
+                "fastest_seconds": fastest,
+                "slowest_seconds": slowest,
+                "runtime_spread_seconds": slowest - fastest,
+            }
+        )
+    return rows
