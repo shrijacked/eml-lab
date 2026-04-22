@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 from eml_lab.comparison import (
     ComparisonResult,
@@ -14,6 +16,7 @@ from eml_lab.comparison import (
     MethodComparisonSnapshotResult,
     PySRStatus,
     _prepare_julia_environment,
+    _run_pysr_worker,
     aggregate_method_comparisons,
     detect_pysr_environment,
     export_method_comparisons,
@@ -29,6 +32,20 @@ from eml_lab.comparison import (
     summarize_method_comparison_snapshots,
     summarize_method_comparisons,
 )
+
+
+def _fake_ok_worker(**kwargs) -> dict[str, object]:
+    output_directory = Path(kwargs["output_directory"])
+    output_directory.mkdir(parents=True, exist_ok=True)
+    (output_directory / "equations.csv").write_text(
+        "equation,loss\nexp(x0),0.0\n", encoding="utf-8"
+    )
+    return {
+        "status": "ok",
+        "best_equation": "exp(x0)",
+        "equations": [{"equation": "exp(x0)", "loss": 0.0}],
+        "output_directory": str(output_directory),
+    }
 
 
 def test_detect_pysr_environment_reports_missing_dependencies(monkeypatch) -> None:
@@ -123,31 +140,8 @@ def test_run_pysr_comparison_uses_fake_pysr(monkeypatch, tmp_path: Path) -> None
         install_hint="ok",
     )
 
-    class FakeEquations:
-        def to_dict(self, orient: str = "records") -> list[dict[str, object]]:
-            assert orient == "records"
-            return [{"equation": "exp(x0)", "loss": 0.0}]
-
-        def to_csv(self, path: Path, index: bool = False) -> None:
-            Path(path).write_text("equation,loss\nexp(x0),0.0\n", encoding="utf-8")
-            assert not index
-
-    class FakePySRRegressor:
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = kwargs
-            self.equations_ = FakeEquations()
-            self.fitted = False
-
-        def fit(self, x, y) -> None:
-            assert x.shape[1] == 1
-            assert len(y) == x.shape[0]
-            self.fitted = True
-
-        def sympy(self) -> str:
-            return "exp(x0)"
-
     monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
-    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", lambda: FakePySRRegressor)
+    monkeypatch.setattr("eml_lab.comparison._run_pysr_worker", _fake_ok_worker)
 
     result = run_pysr_comparison("exp", tmp_path, niterations=2, maxsize=8)
 
@@ -172,11 +166,15 @@ def test_run_pysr_comparison_reports_bootstrap_failure_without_crashing(
         install_hint="PySR can be bootstrapped into a writable Julia depot on first import.",
     )
 
-    def _raise_loader_error():
-        raise RuntimeError("network bootstrap failed")
+    def _unavailable_worker(**kwargs) -> dict[str, object]:
+        return {
+            "status": "unavailable",
+            "reason": "network bootstrap failed",
+            "install_hint": "Install Julia.",
+        }
 
     monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
-    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", _raise_loader_error)
+    monkeypatch.setattr("eml_lab.comparison._run_pysr_worker", _unavailable_worker)
     monkeypatch.setattr("eml_lab.comparison._prepare_julia_environment", lambda: "/tmp/julia")
 
     result = run_pysr_comparison("exp", tmp_path)
@@ -202,11 +200,15 @@ def test_run_pysr_compare_suite_marks_runtime_bootstrap_failure_unavailable(
         install_hint="PySR can be bootstrapped into a writable Julia depot on first import.",
     )
 
-    def _raise_loader_error():
-        raise RuntimeError("network bootstrap failed")
+    def _unavailable_worker(**kwargs) -> dict[str, object]:
+        return {
+            "status": "unavailable",
+            "reason": "network bootstrap failed",
+            "install_hint": "Install Julia.",
+        }
 
     monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
-    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", _raise_loader_error)
+    monkeypatch.setattr("eml_lab.comparison._run_pysr_worker", _unavailable_worker)
     monkeypatch.setattr("eml_lab.comparison._prepare_julia_environment", lambda: "/tmp/julia")
 
     result = run_pysr_compare_suite("shallow", tmp_path)
@@ -215,6 +217,47 @@ def test_run_pysr_compare_suite_marks_runtime_bootstrap_failure_unavailable(
     assert result.pysr_success_rate == 0.0
     assert all(not run.available for run in result.runs)
     assert all(run.status == "unavailable" for run in result.runs)
+
+
+def test_run_pysr_worker_invokes_isolated_module(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_run(command, check, capture_output, text, env):
+        captured["command"] = command
+        captured["check"] = check
+        captured["capture_output"] = capture_output
+        captured["text"] = text
+        captured["env"] = env
+        summary_path = Path(command[command.index("--summary-path") + 1])
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "best_equation": "exp(x0)",
+                    "output_directory": str(tmp_path / "pysr"),
+                }
+            ),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    result = _run_pysr_worker(
+        target="exp",
+        domain=(-1.0, 1.0),
+        points=8,
+        niterations=2,
+        maxsize=8,
+        seed=0,
+        output_directory=tmp_path / "pysr",
+    )
+
+    command = captured["command"]
+    assert command[1:3] == ["-m", "eml_lab.pysr_worker"]
+    assert "torch" not in " ".join(command)
+    assert result["status"] == "ok"
+    assert result["best_equation"] == "exp(x0)"
 
 
 def test_run_pysr_compare_suite_writes_summary_when_unavailable(
@@ -251,29 +294,8 @@ def test_run_pysr_compare_suite_uses_fake_pysr(monkeypatch, tmp_path: Path) -> N
         install_hint="ok",
     )
 
-    class FakeEquations:
-        def to_dict(self, orient: str = "records") -> list[dict[str, object]]:
-            assert orient == "records"
-            return [{"equation": "exp(x0)", "loss": 0.0}]
-
-        def to_csv(self, path: Path, index: bool = False) -> None:
-            Path(path).write_text("equation,loss\nexp(x0),0.0\n", encoding="utf-8")
-            assert not index
-
-    class FakePySRRegressor:
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = kwargs
-            self.equations_ = FakeEquations()
-
-        def fit(self, x, y) -> None:
-            assert x.shape[1] == 1
-            assert len(y) == x.shape[0]
-
-        def sympy(self) -> str:
-            return "exp(x0)"
-
     monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
-    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", lambda: FakePySRRegressor)
+    monkeypatch.setattr("eml_lab.comparison._run_pysr_worker", _fake_ok_worker)
 
     result = run_pysr_compare_suite("shallow", tmp_path, niterations=2, maxsize=8)
 
@@ -322,29 +344,8 @@ def test_run_method_comparison_uses_fake_pysr(monkeypatch, tmp_path: Path) -> No
         install_hint="ok",
     )
 
-    class FakeEquations:
-        def to_dict(self, orient: str = "records") -> list[dict[str, object]]:
-            assert orient == "records"
-            return [{"equation": "exp(x0)", "loss": 0.0}]
-
-        def to_csv(self, path: Path, index: bool = False) -> None:
-            Path(path).write_text("equation,loss\nexp(x0),0.0\n", encoding="utf-8")
-            assert not index
-
-    class FakePySRRegressor:
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = kwargs
-            self.equations_ = FakeEquations()
-
-        def fit(self, x, y) -> None:
-            assert x.shape[1] == 1
-            assert len(y) == x.shape[0]
-
-        def sympy(self) -> str:
-            return "exp(x0)"
-
     monkeypatch.setattr("eml_lab.comparison.detect_pysr_environment", lambda: status)
-    monkeypatch.setattr("eml_lab.comparison._load_pysr_regressor", lambda: FakePySRRegressor)
+    monkeypatch.setattr("eml_lab.comparison._run_pysr_worker", _fake_ok_worker)
 
     result = run_method_comparison("exp", tmp_path, niterations=2, maxsize=8)
 

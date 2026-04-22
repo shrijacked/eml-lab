@@ -8,15 +8,13 @@ import json
 import math
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-import torch
 
 from eml_lab.agentic import OrchestratorConfig, run_orchestrator
 from eml_lab.artifacts import ArtifactFile, write_artifact_manifest
@@ -393,12 +391,6 @@ def _prepare_julia_environment() -> str:
 
 def _timestamp_slug() -> str:
     return datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
-
-
-def _load_pysr_regressor() -> type:
-    from pysr import PySRRegressor
-
-    return PySRRegressor
 
 
 def run_pysr_comparison(
@@ -1112,24 +1104,12 @@ def _run_available_pysr(
         }
 
     depot_path = _prepare_julia_environment()
-    try:
-        PySRRegressor = _load_pysr_regressor()
-    except Exception as exc:
-        return {
-            "status": "unavailable",
-            "reason": str(exc),
-            "install_hint": (
-                "PySR needs a reachable Julia download source the first time it boots a "
-                "managed runtime. If you already have Julia installed, add it to PATH."
-            ),
-            "julia_depot_path": depot_path,
-        }
     inputs = sample_inputs(spec, points=points)
     variable_name = spec.variables[0]
     x_tensor = inputs[variable_name]
     y_tensor = spec.function(inputs)
-    x_imag_max = float(torch.max(torch.abs(x_tensor.imag)).item())
-    y_imag_max = float(torch.max(torch.abs(y_tensor.imag)).item())
+    x_imag_max = float(x_tensor.imag.abs().max().item())
+    y_imag_max = float(y_tensor.imag.abs().max().item())
     if y_imag_max > 1e-12 or x_imag_max > 1e-12:
         return {
             "status": "unsupported",
@@ -1138,63 +1118,93 @@ def _run_available_pysr(
             "y_imag_max": y_imag_max,
         }
 
-    X = x_tensor.real.detach().cpu().numpy().reshape(-1, 1)
-    y = y_tensor.real.detach().cpu().numpy()
     model_output = root / "pysr"
-    model_output.mkdir(parents=True, exist_ok=True)
-
-    model = PySRRegressor(
+    domain = spec.train_domain[variable_name]
+    summary = _run_pysr_worker(
+        target=spec.name,
+        domain=domain,
+        points=points,
         niterations=niterations,
         maxsize=maxsize,
-        model_selection="best",
-        binary_operators=["+", "-", "*", "/"],
-        unary_operators=["exp", "log"],
-        progress=False,
-        precision=64,
-        output_directory=str(model_output),
-        run_id=f"eml_lab_{spec.name}_{seed}",
+        seed=seed,
+        output_directory=model_output,
     )
+    summary["julia_depot_path"] = depot_path
+    return summary
 
-    start = time.perf_counter()
+
+def _run_pysr_worker(
+    *,
+    target: str,
+    domain: tuple[float, float],
+    points: int,
+    niterations: int,
+    maxsize: int,
+    seed: int,
+    output_directory: Path,
+) -> dict[str, object]:
+    output_directory.mkdir(parents=True, exist_ok=True)
+    summary_path = output_directory / "summary.json"
+    command = [
+        sys.executable,
+        "-m",
+        "eml_lab.pysr_worker",
+        "--target",
+        target,
+        "--low",
+        str(domain[0]),
+        "--high",
+        str(domain[1]),
+        "--points",
+        str(points),
+        "--niterations",
+        str(niterations),
+        "--maxsize",
+        str(maxsize),
+        "--seed",
+        str(seed),
+        "--output-directory",
+        str(output_directory),
+        "--summary-path",
+        str(summary_path),
+    ]
+    env = os.environ.copy()
     try:
-        model.fit(X, y)
-    except Exception as exc:  # pragma: no cover - exercised only with real PySR installed
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    except OSError as exc:
         return {
             "status": "error",
             "reason": str(exc),
-            "julia_depot_path": depot_path,
-            "elapsed_seconds": time.perf_counter() - start,
+            "worker_command": command,
         }
-    elapsed = time.perf_counter() - start
 
-    equations = getattr(model, "equations_", None)
-    equations_records: list[dict[str, object]] | None = None
-    if equations is not None:
-        if hasattr(equations, "to_dict"):
-            equations_records = equations.to_dict(orient="records")
-        if hasattr(equations, "to_csv"):
-            equations.to_csv(model_output / "equations.csv", index=False)
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if not isinstance(summary, dict):
+            return {
+                "status": "error",
+                "reason": "PySR worker summary was not a JSON object.",
+                "return_code": completed.returncode,
+            }
+        if completed.returncode != 0:
+            summary.setdefault("return_code", completed.returncode)
+            if completed.stderr:
+                summary.setdefault("stderr", completed.stderr)
+        return summary
 
-    best_equation = None
-    if hasattr(model, "sympy"):
-        try:
-            best_equation = str(model.sympy())
-        except Exception as exc:  # pragma: no cover - depends on PySR runtime details
-            best_equation = f"<sympy export failed: {exc}>"
-
+    status = "unavailable" if completed.returncode == 3 else "error"
+    reason = completed.stderr.strip() or completed.stdout.strip() or "PySR worker failed."
     return {
-        "status": "ok",
-        "elapsed_seconds": elapsed,
-        "best_equation": best_equation,
-        "operators": {
-            "binary": ["+", "-", "*", "/"],
-            "unary": ["exp", "log"],
-        },
-        "niterations": niterations,
-        "maxsize": maxsize,
-        "equations": equations_records,
-        "output_directory": str(model_output),
-        "julia_depot_path": depot_path,
+        "status": status,
+        "reason": reason,
+        "return_code": completed.returncode,
+        "worker_command": command,
     }
 
 
