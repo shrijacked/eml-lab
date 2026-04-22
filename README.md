@@ -267,6 +267,16 @@ This suite intentionally tracks `x^2`, `x*y`, division, and `sin(x)` as research
 experiments. Failures stay visible in the artifacts with target tier, expected depth,
 known failure modes, and verifier output; they are not reported as solved.
 
+Run a seed sweep for the same hard targets:
+
+```bash
+python -m eml_lab campaign --suite phase2-research-sweep --output-dir runs
+```
+
+This writes two retry seeds per hard target. Reports use those artifacts to show
+seed counts and the best observed seed per target without upgrading hard-target
+experiments into shipped recovery claims.
+
 Build a per-target research report from saved research campaigns:
 
 ```bash
@@ -281,7 +291,8 @@ This writes a timestamped bundle with:
 - `manifest.json`
 
 The report includes every research target, even when a target has not been run yet, so
-the gap between "tracked" and "attempted" stays visible.
+the gap between "tracked" and "attempted" stays visible. When sweep artifacts exist,
+the report also includes per-target seed counts and best observed seeds.
 
 Run the local proposer/evaluator/pruner loop:
 
@@ -363,6 +374,7 @@ src/eml_lab/
   guidance
 - shipped: research-tier campaign suite with explicit failure reporting for `x^2`,
   `x*y`, division, and `sin(x)`
+- shipped: hard-target seed sweep campaign and seed-aware research reports
 - shipped: cross-method comparison runs for gradient, agentic, and optional PySR
   search
 - shipped: saved cross-method artifact discovery and reload in the dashboard and CLI

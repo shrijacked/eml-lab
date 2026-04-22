@@ -20,7 +20,18 @@ def test_find_research_runs_discovers_campaign_train_steps(tmp_path: Path) -> No
     assert isinstance(runs[0], ResearchRunEntry)
     assert {run.target for run in runs} == set(list_targets(tier="research"))
     assert all(run.tier == "research" for run in runs)
+    assert all(run.seed == 0 for run in runs)
     assert all(run.summary_path.endswith("metrics.json") for run in runs)
+
+
+def test_find_research_runs_discovers_seed_sweep_campaigns(tmp_path: Path) -> None:
+    run_campaign("phase2-research-sweep", tmp_path)
+
+    runs = find_research_runs(tmp_path)
+
+    assert len(runs) == 8
+    assert {run.target for run in runs} == set(list_targets(tier="research"))
+    assert {run.seed for run in runs} == {0, 1}
 
 
 def test_aggregate_research_runs_includes_unrun_research_targets(tmp_path: Path) -> None:
@@ -30,6 +41,8 @@ def test_aggregate_research_runs_includes_unrun_research_targets(tmp_path: Path)
     assert report.target_count == len(list_targets(tier="research"))
     assert {row.target for row in report.targets} == set(list_targets(tier="research"))
     assert all(row.runs == 0 for row in report.targets)
+    assert all(row.seed_count == 0 for row in report.targets)
+    assert all(row.best_seed is None for row in report.targets)
     assert all(row.latest_status == "not_run" for row in report.targets)
 
 
@@ -49,6 +62,8 @@ def test_write_research_report_creates_report_bundle(tmp_path: Path) -> None:
     report = Path(result.report_path).read_text(encoding="utf-8")
     assert "# Research Target Report" in report
     assert "## Per-Target Outcomes" in report
+    assert "seed_count" in report
+    assert "best_seed" in report
     assert "## Run Details" in report
 
 

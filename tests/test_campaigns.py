@@ -3,6 +3,7 @@ from pathlib import Path
 from eml_lab.campaigns import (
     CampaignResult,
     find_campaign_results,
+    get_campaign,
     list_campaigns,
     load_campaign,
     run_campaign,
@@ -12,7 +13,18 @@ from eml_lab.campaigns import (
 def test_list_campaigns_includes_phase2_foundation() -> None:
     assert "phase2-foundation" in list_campaigns()
     assert "phase2-agentic" in list_campaigns()
+    assert "phase2-research-sweep" in list_campaigns()
     assert "phase2-operator-zoo" in list_campaigns()
+
+
+def test_research_sweep_campaign_tracks_seed_retries() -> None:
+    spec = get_campaign("phase2-research-sweep")
+    train_steps = [step for step in spec.steps if step.kind == "train"]
+
+    assert len(train_steps) == 8
+    assert {step.target for step in train_steps} == {"square", "mul", "div", "sin"}
+    assert {step.seed for step in train_steps} == {0, 1}
+    assert all(not step.required for step in train_steps)
 
 
 def test_run_campaign_writes_summary_and_manifest(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ class ResearchRunEntry:
     target: str
     display_name: str
     tier: str
+    seed: int | None
     status: str
     success: bool
     effective_success: bool
@@ -44,11 +45,13 @@ class ResearchTargetRow:
     target: str
     display_name: str
     runs: int
+    seed_count: int
     success_count: int
     success_rate: float
     latest_status: str
     latest_failure_reason: str | None
     latest_rpn: str | None
+    best_seed: int | None
     best_max_mse: float | None
     best_final_loss: float | None
     expected_depth: int | None
@@ -107,8 +110,14 @@ def find_research_runs(root: str | Path = "runs") -> tuple[ResearchRunEntry, ...
     if not source.exists():
         return ()
 
-    summary_paths = set(source.rglob("campaign-phase2-research-*/summary.json"))
-    if source.name.startswith("campaign-phase2-research-") and (source / "summary.json").exists():
+    summary_paths = {
+        *source.rglob("campaign-phase2-research-*/summary.json"),
+        *source.rglob("campaign-phase2-research-sweep-*/summary.json"),
+    }
+    if (
+        source.name.startswith(("campaign-phase2-research-", "campaign-phase2-research-sweep-"))
+        and (source / "summary.json").exists()
+    ):
         summary_paths.add(source / "summary.json")
 
     ordered_paths = sorted(
@@ -148,16 +157,20 @@ def aggregate_research_runs(
         target_success_count = sum(1 for run in target_runs if run.success)
         max_mses = [run.max_mse for run in target_runs if run.max_mse is not None]
         final_losses = [run.final_loss for run in target_runs if run.final_loss is not None]
+        seeds = {run.seed for run in target_runs if run.seed is not None}
+        best_run = _best_research_run(target_runs)
         target_rows.append(
             ResearchTargetRow(
                 target=target_name,
                 display_name=spec.display_name,
                 runs=len(target_runs),
+                seed_count=len(seeds),
                 success_count=target_success_count,
                 success_rate=target_success_count / len(target_runs) if target_runs else 0.0,
                 latest_status=latest.status if latest is not None else "not_run",
                 latest_failure_reason=latest.failure_reason if latest is not None else None,
                 latest_rpn=latest.rpn if latest is not None else None,
+                best_seed=best_run.seed if best_run is not None else None,
                 best_max_mse=min(max_mses) if max_mses else None,
                 best_final_loss=min(final_losses) if final_losses else None,
                 expected_depth=spec.expected_depth,
@@ -234,7 +247,7 @@ def write_research_report(
 
 def _load_research_runs_from_campaign(summary_path: Path) -> tuple[ResearchRunEntry, ...]:
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    if payload.get("suite") != "phase2-research":
+    if payload.get("suite") not in {"phase2-research", "phase2-research-sweep"}:
         return ()
 
     created_at = datetime.fromtimestamp(summary_path.stat().st_mtime, UTC).isoformat()
@@ -258,6 +271,7 @@ def _load_research_runs_from_campaign(summary_path: Path) -> tuple[ResearchRunEn
                 target=target,
                 display_name=spec.display_name,
                 tier=str(metrics.get("target_tier", spec.tier)),
+                seed=_seed_from_metrics(metrics),
                 status=str(run_payload.get("status", "failed")),
                 success=bool(run_payload.get("success", False)),
                 effective_success=bool(run_payload.get("effective_success", False)),
@@ -285,6 +299,28 @@ def _target_from_metrics(metrics: dict[str, object]) -> str:
     if isinstance(config, dict) and isinstance(config.get("target"), str):
         return str(config["target"])
     raise KeyError("Research run metrics do not include a target")
+
+
+def _seed_from_metrics(metrics: dict[str, object]) -> int | None:
+    config = metrics.get("config", {})
+    if isinstance(config, dict):
+        return _optional_int(config.get("seed"))
+    return None
+
+
+def _best_research_run(runs: Sequence[ResearchRunEntry]) -> ResearchRunEntry | None:
+    candidates = [run for run in runs if run.max_mse is not None]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda run: (
+            run.max_mse if run.max_mse is not None else float("inf"),
+            run.final_loss if run.final_loss is not None else float("inf"),
+            run.seed if run.seed is not None else 10**9,
+            run.created_at,
+        ),
+    )
 
 
 def _failure_reason(metrics: dict[str, object], verification: dict[str, object]) -> str | None:
@@ -361,10 +397,10 @@ def _render_research_report(report: ResearchAggregate) -> str:
             "",
             "## Per-Target Outcomes",
             (
-                "| target | runs | success_rate | latest_status | best_max_mse | "
-                "latest_failure_reason | expected_depth | latest_rpn |"
+                "| target | runs | seed_count | success_rate | latest_status | best_seed | "
+                "best_max_mse | latest_failure_reason | expected_depth | latest_rpn |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     for row in report.targets:
@@ -374,8 +410,10 @@ def _render_research_report(report: ResearchAggregate) -> str:
                 [
                     row.target,
                     str(row.runs),
+                    str(row.seed_count),
                     f"{row.success_rate:.2%}",
                     row.latest_status,
+                    _markdown_scalar(row.best_seed),
                     _markdown_scalar(row.best_max_mse),
                     _markdown_scalar(row.latest_failure_reason),
                     _markdown_scalar(row.expected_depth),
@@ -409,10 +447,10 @@ def _render_research_report(report: ResearchAggregate) -> str:
             "",
             "## Run Details",
             (
-                "| created_at | target | status | success | max_mse | final_loss | "
+                "| created_at | target | seed | status | success | max_mse | final_loss | "
                 "failure_reason | output_dir |"
             ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
     )
     if report.runs:
@@ -423,6 +461,7 @@ def _render_research_report(report: ResearchAggregate) -> str:
                     [
                         run.created_at,
                         run.target,
+                        _markdown_scalar(run.seed),
                         run.status,
                         "yes" if run.success else "no",
                         _markdown_scalar(run.max_mse),
@@ -434,7 +473,7 @@ def _render_research_report(report: ResearchAggregate) -> str:
                 + " |"
             )
     else:
-        lines.append("| _none_ | n/a | n/a | no | n/a | n/a | n/a | `n/a` |")
+        lines.append("| _none_ | n/a | n/a | n/a | no | n/a | n/a | n/a | `n/a` |")
     return "\n".join(lines) + "\n"
 
 
